@@ -155,11 +155,22 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .timer.warn { background: var(--red); animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .6; } }
 
-.exam-layout { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: 1fr 250px; gap: 14px; padding: 14px 16px 80px; }
-.question-area { min-width: 0; }
+/* 桌面端全宽分栏：左侧答题卡面板 + 右侧题目区，占满屏幕无空白 */
+.exam-layout {
+  width: 100%; max-width: none; margin: 0;
+  display: grid; grid-template-columns: 250px minmax(0, 1fr);
+  grid-template-areas: "acard qarea"; gap: 0; padding: 14px 0 80px;
+}
+.exam-layout .answer-card {
+  grid-area: acard;
+  background: #f4f6fb; border: none; border-radius: 0; box-shadow: none;
+  border-right: 1px solid var(--line);
+  padding: 14px 16px;
+}
+.exam-layout .question-area { grid-area: qarea; min-width: 0; padding: 0 24px; }
 
 /* 答题卡 */
-.answer-card { position: sticky; top: 76px; align-self: start; padding: 14px; }
+.answer-card { position: sticky; top: 76px; align-self: start; max-height: calc(100vh - 96px); overflow-y: auto; }
 .answer-card .ac-stats { display: flex; gap: 6px; margin-bottom: 12px; }
 .answer-card .ac-stats .st { flex: 1; background: var(--bg); border-radius: 9px; padding: 7px 4px; text-align: center; }
 .answer-card .ac-stats .st b { display: block; font-size: 17px; }
@@ -167,14 +178,23 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .answer-card .st.done b { color: var(--green); }
 .answer-card .st.none b { color: var(--amber); }
 .answer-card .st.flag b { color: var(--purple); }
-.answer-card .ac-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
-.answer-card .ac-grid button {
+/* 答题卡题号容器（现在装题型分组） */
+.answer-card .ac-grid { display: block; }
+.answer-card .ng-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
+.answer-card .ng-grid button {
   aspect-ratio: 1/1; border-radius: 9px; background: #f4f6fb; color: var(--txt);
   font-size: 13px; font-weight: 700; border: 1px solid var(--line);
 }
-.answer-card .ac-grid button.done { background: var(--green); color: #fff; border-color: var(--green); }
-.answer-card .ac-grid button.flag { box-shadow: inset 0 0 0 2px var(--purple); }
-.answer-card .ac-grid button.cur { outline: 2px solid var(--pri); outline-offset: 1px; }
+.answer-card .ng-grid button.done { background: var(--green); color: #fff; border-color: var(--green); }
+.answer-card .ng-grid button.flag { box-shadow: inset 0 0 0 2px var(--purple); }
+.answer-card .ng-grid button.cur { outline: 2px solid var(--pri); outline-offset: 1px; }
+/* 答题卡按题型分组 */
+.answer-card .nav-group { margin-bottom: 12px; }
+.answer-card .nav-group + .nav-group { padding-top: 12px; border-top: 1px dashed var(--line); }
+.answer-card .ng-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.answer-card .ng-head .type-badge { font-size: 11px; padding: 2px 8px; }
+.answer-card .ng-name { font-size: 12px; font-weight: 600; color: var(--sub); }
+.answer-card .ng-count { margin-left: auto; font-size: 11px; color: var(--sub); font-weight: 400; }
 .answer-card .ac-legend { margin-top: 12px; font-size: 12px; color: var(--sub); display: flex; gap: 10px; flex-wrap: wrap; }
 .answer-card .ac-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
 .submit-btn { width: 100%; margin-top: 12px; }
@@ -270,16 +290,17 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .exam-nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   background: #fff; border-top: 1px solid var(--line);
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
-  display: flex; gap: 10px; max-width: 1080px; margin: 0 auto;
+  padding: 10px 24px calc(10px + env(safe-area-inset-bottom));
+  display: flex; gap: 10px;
 }
 .exam-nav .btn { flex: 1; }
 
 /* 移动端适配 */
 @media (max-width: 860px) {
-  .exam-layout { grid-template-columns: 1fr; padding-bottom: 90px; }
-  .answer-card { position: static; }
-  .answer-card .ac-grid { grid-template-columns: repeat(8, 1fr); }
+  .exam-layout { grid-template-columns: 1fr; grid-template-areas: "qarea" "acard"; padding-bottom: 90px; }
+  .exam-layout .question-area { grid-area: qarea; }
+  .exam-layout .answer-card { grid-area: acard; position: static; max-height: none; overflow: visible; border-right: none; }
+  .answer-card .ng-grid { grid-template-columns: repeat(8, 1fr); }
   .result-stats { grid-template-columns: repeat(2, 1fr); }
   .page { padding: 14px 12px 40px; }
 }
@@ -734,15 +755,33 @@ function renderQ(i) {
         <button class="btn flag-btn ${S.flags.has(i) ? 'on' : ''}" onclick="toggleFlag(${i})">${S.flags.has(i) ? '★ 已标记' : '☆ 标记'}</button>
       </div>
     </div>`;
-  // 更新导航高亮
-  document.querySelectorAll('#navGrid button').forEach((b, k) => b.classList.toggle('cur', k === i));
+  // 更新导航高亮（分组后按钮顺序与题目顺序可能不同，按 data-i 精确定位）
+  document.querySelectorAll('#navGrid button').forEach(b => b.classList.remove('cur'));
+  const curBtn = document.querySelector(`#navGrid button[data-i="${i}"]`);
+  if (curBtn) curBtn.classList.add('cur');
 }
 
 /* ---------- 答题卡 ---------- */
 function renderNav() {
   const grid = $('navGrid');
-  grid.innerHTML = S.qs.map((_, i) =>
-    `<button class="${S.ans[i] ? 'done' : ''} ${S.flags.has(i) ? 'flag' : ''}" onclick="renderQ(${i})">${i + 1}</button>`
+  // 按题型分组渲染答题卡（保持题型在卷面中的出现顺序）
+  const order = [];
+  const byType = {};
+  S.qs.forEach((q, i) => {
+    if (!byType[q.type]) { byType[q.type] = []; order.push(q.type); }
+    byType[q.type].push(i);
+  });
+  grid.innerHTML = order.map(t =>
+    `<div class="nav-group">
+      <div class="ng-head">
+        <span class="type-badge tb-${t}">${t}型</span>
+        <span class="ng-name">${TYPE_NAMES[t] || t}</span>
+        <span class="ng-count">${byType[t].length} 题</span>
+      </div>
+      <div class="ng-grid">${byType[t].map(i =>
+        `<button data-i="${i}" class="${S.ans[i] ? 'done' : ''} ${S.flags.has(i) ? 'flag' : ''}" onclick="renderQ(${i})">${i + 1}</button>`
+      ).join('')}</div>
+    </div>`
   ).join('');
   $('stDoneN').textContent = Object.keys(S.ans).filter(k => S.ans[k]).length;
   $('stNoneN').textContent = S.qs.length - Object.keys(S.ans).filter(k => S.ans[k]).length;
