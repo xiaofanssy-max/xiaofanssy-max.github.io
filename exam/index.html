@@ -285,6 +285,54 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .wrong-item .wi-meta { font-size: 12px; color: var(--sub); display: flex; gap: 12px; flex-wrap: wrap; }
 .wrong-item .wi-actions { margin-top: 12px; display: flex; gap: 8px; }
 .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--bg); color: var(--sub); font-weight: 600; }
+.badge.pass { background: #dcfce7; color: var(--green); }
+.badge.fail { background: #fee2e2; color: var(--red); }
+.badge.auto { background: #fef3c7; color: var(--amber); }
+
+/* ============================================================
+   筛选栏（考试记录 / 错题本 共用）
+   ============================================================ */
+.filter-bar {
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.fb-row { display: flex; align-items: flex-start; gap: 10px; }
+.fb-label { flex: none; width: 34px; padding-top: 6px; font-size: 12px; font-weight: 700; color: var(--sub); }
+.chips { flex: 1; min-width: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.chips button {
+  padding: 5px 11px; border-radius: 14px; font-size: 12.5px; font-weight: 600;
+  background: var(--bg); color: var(--sub); border: 1px solid transparent;
+}
+.chips button.on { background: var(--pri); color: #fff; }
+.chips button .cn { font-weight: 400; opacity: .8; margin-left: 3px; }
+
+/* ============================================================
+   考试记录
+   ============================================================ */
+.rec-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.rec-item { padding: 15px 16px; margin-bottom: 12px; border-left: 4px solid var(--line); }
+.rec-item.pass { border-left-color: var(--green); }
+.rec-item.fail { border-left-color: var(--red); }
+.rec-item .ri-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.rec-item .ri-score { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.rec-item .ri-score b { font-size: 26px; font-weight: 800; line-height: 1; }
+.rec-item.pass .ri-score b { color: var(--green); }
+.rec-item.fail .ri-score b { color: var(--red); }
+.rec-item .ri-score span { font-size: 13px; color: var(--sub); }
+.rec-item .ri-meta { font-size: 12.5px; color: var(--sub); display: flex; gap: 12px; flex-wrap: wrap; }
+.rec-item .ri-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.rec-back { margin-bottom: 12px; }
+.review-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.exp-toggle { padding: 6px 12px; border-radius: 16px; font-size: 13px; }
+.exp-toggle.on { background: var(--pri); border-color: var(--pri); color: #fff; }
+.stale-tip {
+  background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+  border-radius: 10px; padding: 10px 14px; font-size: 13px; margin-bottom: 14px;
+}
+.wrong-item .wi-src {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 8px; font-size: 12px; color: var(--sub);
+}
 
 /* 底部浮层（考试页操作按钮） */
 .exam-nav {
@@ -316,6 +364,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   </div>
   <div class="top-actions">
     <button class="tb-btn" id="navWrong" onclick="goWrongbook()">错题本 <span id="wrongCount" style="opacity:.85"></span></button>
+    <button class="tb-btn" id="navRecords" onclick="goRecords()">考试记录 <span id="recCount" style="opacity:.85"></span></button>
     <button class="tb-btn" id="navHome" onclick="goHome()" style="display:none">题库</button>
   </div>
 </header>
@@ -325,8 +374,10 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   <div class="home-head">
     <h2>选择题库开始练习</h2>
     <div class="stat-pills">
+      <span class="stat-pill">考试次数 <b id="stExams"></b></span>
       <span class="stat-pill">累计做题 <b id="stDone"></b></span>
       <span class="stat-pill">正确率 <b id="stRate"></b></span>
+      <span class="stat-pill">最高分 <b id="stBest"></b></span>
     </div>
   </div>
   <div id="subjectList"></div>
@@ -438,6 +489,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
   <div class="result-actions">
     <button class="btn btn-pri" onclick="retry()">🔁 再考一次</button>
+    <button class="btn btn-ghost" onclick="openRecord(S.result && S.result.recordId)">📄 查看本次记录</button>
     <button class="btn btn-ghost" onclick="goHome()">🏠 返回题库</button>
     <button class="btn btn-line" onclick="window.print()">🖨 打印</button>
   </div>
@@ -461,8 +513,76 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     <h2>📕 我的错题本</h2>
     <button class="btn btn-danger" style="padding:7px 14px;font-size:13px" onclick="clearWrongbook()">清空错题</button>
   </div>
+  <div class="filter-bar">
+    <div class="fb-row"><span class="fb-label">场次</span><div class="chips" id="wrongSessionChips"></div></div>
+    <div class="fb-row"><span class="fb-label">科目</span><div class="chips" id="wrongSubjectChips"></div></div>
+    <div class="fb-row"><span class="fb-label">排序</span><div class="chips" id="wrongSortChips"></div></div>
+  </div>
   <div id="wrongList"></div>
   <div class="empty-tip hidden" id="wrongEmpty">暂无错题。做错的题会自动收录到这里，方便反复巩固。</div>
+</div>
+
+<!-- ===================== 考试记录列表 ===================== -->
+<div id="page-records" class="page hidden">
+  <div class="home-head">
+    <h2>📅 我的考试记录</h2>
+    <div class="rec-tools">
+      <button class="btn btn-ghost" style="padding:7px 13px;font-size:13px" onclick="exportRecords()">⬇ 导出备份</button>
+      <button class="btn btn-ghost" style="padding:7px 13px;font-size:13px" onclick="document.getElementById('importFile').click()">⬆ 导入恢复</button>
+      <button class="btn btn-danger" style="padding:7px 13px;font-size:13px" onclick="clearRecordsConfirm()">清空记录</button>
+      <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importRecords(this)">
+    </div>
+  </div>
+  <div class="filter-bar">
+    <div class="fb-row"><span class="fb-label">科目</span><div class="chips" id="recSubjectChips"></div></div>
+    <div class="fb-row"><span class="fb-label">结果</span><div class="chips" id="recResultChips"></div></div>
+  </div>
+  <div id="recordList"></div>
+  <div class="empty-tip hidden" id="recordEmpty"></div>
+  <div class="empty-tip" style="font-size:13px;padding:20px 16px">
+    记录保存在本机浏览器中（最多保留 50 次）。清理浏览器数据或更换设备会丢失，建议定期「导出备份」。
+  </div>
+</div>
+
+<!-- ===================== 考试记录详情 ===================== -->
+<div id="page-recDetail" class="page hidden">
+  <div class="rec-back"><button class="btn btn-line" onclick="backFromRecord()">← 返回记录</button></div>
+  <div class="card result-hero">
+    <div class="score-ring" id="rdRing">
+      <div class="sr-in">
+        <div class="sr-score" id="rdScore">0</div>
+        <div class="sr-max" id="rdMax">/ 0 题</div>
+      </div>
+    </div>
+    <div class="verdict" id="rdVerdict"></div>
+    <div style="color:var(--sub);font-size:13px;margin-top:6px" id="rdMeta"></div>
+  </div>
+  <div class="result-stats">
+    <div class="rs"><b id="rdTotal" style="color:var(--pri)">0</b><span>总题数</span></div>
+    <div class="rs"><b id="rdCorrect" style="color:var(--green)">0</b><span>答对</span></div>
+    <div class="rs"><b id="rdWrong" style="color:var(--red)">0</b><span>答错</span></div>
+    <div class="rs"><b id="rdRate" style="color:var(--amber)">0%</b><span>正确率</span></div>
+  </div>
+  <div class="result-actions">
+    <button class="btn btn-pri hidden" id="rdWrongBtn" onclick="jumpToWrongbook()">📕 本场错题</button>
+    <button class="btn btn-ghost" onclick="retryCurRecord()">🔁 再考一次</button>
+    <button class="btn btn-line" onclick="window.print()">🖨 打印</button>
+  </div>
+  <div class="stale-tip hidden" id="rdStale"></div>
+  <div class="review">
+    <div class="review-head">
+      <h3>试卷与解析</h3>
+      <div class="review-ctl">
+        <div class="filter-btns">
+          <button class="on" data-f="all" onclick="setRecFilter('all',this)">全部</button>
+          <button data-f="wrong" onclick="setRecFilter('wrong',this)">只看错题</button>
+          <button data-f="right" onclick="setRecFilter('right',this)">只看答对</button>
+        </div>
+        <button class="btn btn-line exp-toggle on" id="rdExpBtn" onclick="toggleRecExp()">隐藏解析</button>
+      </div>
+    </div>
+    <div id="recReviewList"></div>
+  </div>
 </div>
 
 <!-- 交卷确认弹窗 -->
@@ -488,7 +608,7 @@ window.BUILTIN_BANKS = [{"id":"2023中药一","subject":"中药一","year":"2023
    ============================================================ */
 const S = {
   bank: null,       // 当前题库 {id,subject,year,label,total,questions}
-  qs: [],           // 本次考试题目
+  qs: [],           // 本次考试题目（每题的 qi = 在题库 questions 中的原始下标）
   ans: {},          // idx -> 'AB'（字符串）
   flags: new Set(),
   cur: 0,
@@ -501,6 +621,9 @@ const S = {
   showExp: true,
   reviewFilter: 'all',
   result: null,
+  perm: {},         // qi -> 选项显示顺序（仅开启"打乱选项"时记录）
+  startAt: 0,       // 开考时间戳
+  endAt: 0,         // 考试结束时间戳
 };
 
 const SUBJECT_ORDER = ['中药一', '中药二', '中药综合', '法规'];
@@ -514,38 +637,197 @@ function shuffle(a) { const x = [...a]; for (let i = x.length - 1; i > 0; i--) {
 function stripOpt(t) { return String(t || '').replace(/^\s*[A-E][.、．．)]\s*/, ''); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
-/* ---------- localStorage 错题本 ---------- */
+/* ============================================================
+   存储层：错题本 + 考试记录（全部基于 localStorage，无需登录）
+   ============================================================ */
+const REC_KEY = 'zy_records_v1';
+const REC_LIMIT = 50;                       // 最多保留 50 条考试记录
+const REC_BUDGET = 3.5 * 1024 * 1024;       // 体积上限 3.5MB（localStorage 一般 5MB）
+const WRONG_LIMIT = 500;
+
+function fmtDur(s) {
+  s = Math.max(0, Math.round(Number(s) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return (h ? h + '小时' : '') + m + '分' + x + '秒';
+}
+function recTime(t) {
+  const d = new Date(Number(t) || 0), p = n => String(n).padStart(2, '0');
+  return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function findBank(id) { return (window.BUILTIN_BANKS || []).find(b => b.id === id) || null; }
+
+/* ---------- 错题本 ---------- */
 function getWrong() {
   try { return JSON.parse(localStorage.getItem('zy_wrong') || '[]'); } catch (e) { return []; }
 }
-function saveWrong(list) { localStorage.setItem('zy_wrong', JSON.stringify(list)); }
-function recordWrong(bank, idx, q) {
+function saveWrong(list) { try { localStorage.setItem('zy_wrong', JSON.stringify(list)); } catch (e) {} }
+// 收录错题：key 用「题库id + 题库原始下标」，保证随机抽题/乱序时同一题只收录一条
+function recordWrong(bank, qi, q, rid) {
+  const key = bank.id + '_' + qi;
   const list = getWrong();
-  const found = list.find(w => w.key === bank.id + '_' + idx);
-  if (found) { found.times++; found.last = Date.now(); }
-  else { list.unshift({ key: bank.id + '_' + idx, bankId: bank.id, bankLabel: bank.label, q, times: 1, last: Date.now() }); }
-  saveWrong(list.slice(0, 500));
+  const t = Date.now();
+  let w = list.find(x => x.key === key);
+  if (!w) {
+    w = { key, bankId: bank.id, bankLabel: bank.label, subject: bank.subject, q, times: 0, last: t, sessions: [] };
+    list.unshift(w);
+  }
+  w.times = (w.times || 0) + 1;
+  w.last = t;
+  if (!Array.isArray(w.sessions)) w.sessions = [];
+  if (rid && !w.sessions.some(s => s.rid === rid)) w.sessions.unshift({ rid, t });
+  w.sessions = w.sessions.slice(0, 20);
+  saveWrong(list.slice(0, WRONG_LIMIT));
 }
 function removeWrong(key) { saveWrong(getWrong().filter(w => w.key !== key)); }
 function wrongCount() { return getWrong().length; }
 
-/* ---------- 首页统计 ---------- */
-function getHistory() {
-  try { return JSON.parse(localStorage.getItem('zy_history') || '[]'); } catch (e) { return []; }
+// 错题身份指纹：题干 + 答案 + 选项文本
+// （题库里存在重复题干，如"四诊合参，辨析其证候是（）"一套卷内出现 3 次；实测该指纹全库零碰撞，可安全用于去重）
+function qFingerprint(q) {
+  if (!q) return '';
+  return String(q.stem || '') + '\u0001' + String(q.answer || '') + '\u0001' + ((q.options || []).join('\u0002'));
 }
-function recordHistory(bank, total, correct, rate) {
-  const h = getHistory();
-  h.unshift({ bank: bank.label, total, correct, rate, t: Date.now() });
-  localStorage.setItem('zy_history', JSON.stringify(h.slice(0, 300)));
+// 一次性规范化（只在首次升级时执行一次）：
+// 旧版 key 用的是卷面下标，开启随机抽题/乱序时同一题会被重复收录 → 按身份指纹合并去重，并重建 key
+function migrateWrong() {
+  const FLAG = 'zy_wrong_v3';
+  try {
+    if (localStorage.getItem(FLAG)) return;
+    const list = getWrong();
+    if (list.length) {
+      // 迁移前留一份原始快照：localStorage 数据无法回滚，万一合并有误可人工恢复
+      try { if (!localStorage.getItem('zy_wrong_bak_premerge')) localStorage.setItem('zy_wrong_bak_premerge', JSON.stringify(list)); } catch (e) {}
+      const map = new Map();
+      for (const w of list) {
+        const fp = String(w.bankId || '') + '|' + qFingerprint(w.q);
+        let it = map.get(fp);
+        if (!it) {
+          it = { key: '', bankId: w.bankId, bankLabel: w.bankLabel, subject: w.subject, q: w.q, times: 0, last: 0, sessions: [] };
+          map.set(fp, it);
+        }
+        it.times += (Number(w.times) || 1);
+        it.last = Math.max(it.last || 0, Number(w.last) || 0);
+        if (Array.isArray(w.sessions)) it.sessions.push(...w.sessions);
+        if (!it.subject && w.subject) it.subject = w.subject;
+      }
+      const merged = [...map.values()].sort((a, b) => (b.last || 0) - (a.last || 0));
+      for (const w of merged) {
+        const bank = findBank(w.bankId);
+        let qi = -1;
+        if (bank && bank.questions) {
+          const fp = qFingerprint(w.q);
+          qi = bank.questions.findIndex(q => qFingerprint(q) === fp);
+          // 选项曾被"打乱"过的历史错题对不上指纹，退化为「题干+答案」匹配（仅用于重建 key）
+          if (qi < 0) qi = bank.questions.findIndex(q => q.stem === (w.q && w.q.stem) && q.answer === (w.q && w.q.answer));
+        }
+        w.key = qi >= 0 ? w.bankId + '_' + qi : String(w.bankId || 'unknown') + '_x' + uid();
+        w.sessions = w.sessions.slice(0, 20);
+      }
+      saveWrong(merged.slice(0, WRONG_LIMIT));
+    }
+    localStorage.setItem(FLAG, '1');
+  } catch (e) {}
 }
+
+/* ---------- 考试记录 ---------- */
+function getRecords() {
+  try { return JSON.parse(localStorage.getItem(REC_KEY) || '[]'); } catch (e) { return []; }
+}
+// 写入：先按 50 条截断，再按体积裁剪；配额异常时删最旧重试。返回 {ok, dropped}
+function setRecords(list) {
+  let arr = list.slice(0, REC_LIMIT);
+  let dropped = Math.max(0, list.length - arr.length);
+  let json = JSON.stringify(arr);
+  while (arr.length > 1 && json.length > REC_BUDGET) { arr.pop(); dropped++; json = JSON.stringify(arr); }
+  for (let i = 0; i <= REC_LIMIT; i++) {
+    try { localStorage.setItem(REC_KEY, json); return { ok: true, dropped }; }
+    catch (e) {
+      if (arr.length <= 1) return { ok: false, dropped };
+      arr.pop(); dropped++; json = JSON.stringify(arr);
+    }
+  }
+  return { ok: false, dropped };
+}
+function saveRecord(rec) { return setRecords([rec, ...getRecords()]); }
+function getRecord(id) { return getRecords().find(r => r.id === id) || null; }
+function deleteRecord(id) { setRecords(getRecords().filter(r => r.id !== id)); }
+function clearRecords() { setRecords([]); }
+
+// 题库指纹：题数 + 题干/答案总字数。题库被改动后可感知，避免回放错位而不自知
+function bankFingerprint(b) {
+  const qs = (b && b.questions) || [];
+  let sum = 0;
+  for (const q of qs) sum += String(q.stem || '').length + String(q.answer || '').length;
+  return qs.length + '_' + sum;
+}
+// 按保存的选项顺序重排选项，并把正确答案换算成新的字母
+function applyOptPerm(base, order) {
+  const labels = 'ABCDE';
+  const options = order.map(k => (base.options || [])[k] ?? '');
+  const answer = order.map((orig, ni) => (String(base.answer || '').includes(labels[orig]) ? labels[ni] : ''))
+    .filter(Boolean).sort().join('');
+  return { ...base, options, answer };
+}
+// 把「引用式记录」还原成可渲染的题目明细；题库失效时退回导出快照
+function hydrateRecord(rec) {
+  const bank = findBank(rec.bankId);
+  const perm = rec.optPerm || {};
+  const ans = rec.ans || {};
+  const sc = rec.sc || [];
+  const qsIdx = Array.isArray(rec.qs) ? rec.qs : [];
+  const build = (q, i) => {
+    const u = ans[String(i)] || '';
+    const s = Number(sc[i]) || 0;
+    return { q, i, qi: qsIdx[i], u, sc: s, status: !u ? 'none' : (s >= 1 ? 'right' : 'wrong') };
+  };
+  const usable = bank && bank.questions && (!rec.bankFingerprint || bankFingerprint(bank) === rec.bankFingerprint);
+  if (usable) {
+    const details = [];
+    let full = true;
+    qsIdx.forEach((qi, i) => {
+      const base = bank.questions[qi];
+      if (!base) { full = false; return; }
+      details.push(build(perm[qi] ? applyOptPerm(base, perm[qi]) : base, i));
+    });
+    if (details.length) return { rec, bank, details, stale: !full, fromSnap: false };
+  }
+  if (Array.isArray(rec.snap) && rec.snap.length === qsIdx.length && qsIdx.length) {
+    return { rec, bank, details: rec.snap.map((q, i) => build(q, i)), stale: false, fromSnap: true };
+  }
+  return { rec, bank, details: [], stale: true, fromSnap: false };
+}
+// 导出时把引用展开成完整快照，保证导出文件自包含
+function expandSnapshot(rec) {
+  const bank = findBank(rec.bankId);
+  if (!bank || !bank.questions || !Array.isArray(rec.qs)) return null;
+  const perm = rec.optPerm || {};
+  const snap = rec.qs.map(qi => {
+    const base = bank.questions[qi];
+    if (!base) return null;
+    const q = perm[qi] ? applyOptPerm(base, perm[qi]) : base;
+    return {
+      num: q.num, type: q.type, stem: q.stem, groupStem: q.groupStem,
+      groupId: q.groupId, options: q.options, answer: q.answer, explanation: q.explanation,
+    };
+  });
+  return snap.every(Boolean) ? snap : null;
+}
+
+/* ---------- 首页统计（只统计新版考试记录；旧 zy_history 已弃用不再读取） ---------- */
 function homeStats() {
-  const h = getHistory();
-  const done = h.reduce((s, x) => s + x.total, 0);
-  const totalQ = h.reduce((s, x) => s + x.total, 0);
-  const totalC = h.reduce((s, x) => s + x.correct, 0);
-  const rate = totalQ ? Math.round(totalC / totalQ * 100) : 0;
+  const recs = getRecords();
+  const done = recs.reduce((s, r) => s + (Number(r.total) || 0), 0);
+  const correct = recs.reduce((s, r) => s + (Number(r.correctN) || 0), 0);
+  let best = 0;
+  for (const r of recs) {
+    if (!r.total) continue;
+    best = Math.max(best, Math.round((Number(r.score) || 0) / r.total * 100));
+  }
+  $('stExams').textContent = recs.length;
   $('stDone').textContent = done;
-  $('stRate').textContent = rate + '%';
+  $('stRate').textContent = done ? Math.round(correct / done * 100) + '%' : '--';
+  $('stBest').textContent = recs.length ? best + '%' : '--';
+  $('recCount').textContent = recs.length ? '(' + recs.length + ')' : '';
 }
 
 /* ============================================================
@@ -629,7 +911,9 @@ function syncCountPass() {
    ============================================================ */
 function setRange(r) {
   S.range = r;
-  document.querySelectorAll('#segRange button').forEach(b => b.classList.toggle('on', b.dataset.range === r));
+  // 'full'（从首页"整卷练习"进入）与 'all' 是同一档，需一并高亮
+  const key = r === 'random' ? 'random' : 'all';
+  document.querySelectorAll('#segRange button').forEach(b => b.classList.toggle('on', b.dataset.range === key));
   $('rowCount').classList.toggle('hidden', r !== 'random');
   // 整卷按当年满分 60% 设及格线，随机抽题按题数 60% 设及格线
   if (S.bank && document.getElementById('setPass')) {
@@ -649,37 +933,30 @@ function swVal(el) { return el.classList.contains('on'); }
    ============================================================ */
 function buildQuestions() {
   const b = S.bank;
-  let qs;
+  const src = b.questions || [];
+  // 用「题库原始下标」组织卷面：随机抽题/乱序都只是打乱下标，题目身份始终稳定（便于记录回放）
+  let idxs = src.map((_, i) => i);
   if (S.range === 'random') {
-    const n = Math.min(parseInt($('setCount').value) || 60, b.questions.length);
-    qs = shuffle(b.questions).slice(0, n);
-  } else {
-    qs = [...b.questions];
+    const n = Math.min(parseInt($('setCount').value) || 60, src.length);
+    idxs = shuffle(idxs).slice(0, n);
   }
-  if (S.shuffle) qs = shuffle(qs);
-  // 乱序选项
-  if (S.shuffleOpt) {
-    qs = qs.map(q => {
-      if (q.type === 'B' || q.type === 'C') {
-        // 组题选项不宜打乱，保持原样
-        return q;
-      }
-      const correct = q.answer;
-      const labels = 'ABCDE';
-      const idx = q.options.map((_, i) => i);
-      const sidx = shuffle(idx);
-      const newOpts = sidx.map(i => q.options[i]);
-      let newAns = sidx.map((orig, ni) => (correct.includes(labels[orig]) ? labels[ni] : '')).filter(Boolean).sort().join('');
-      return { ...q, options: newOpts, answer: newAns };
-    });
-  }
+  if (S.shuffle) idxs = shuffle(idxs);
+  const perm = {};   // qi -> 选项显示顺序（原下标数组）
+  const qs = idxs.map(qi => {
+    const base = src[qi];
+    // B/C 型为组题，选项不打乱
+    if (!S.shuffleOpt || base.type === 'B' || base.type === 'C') return { ...base, qi };
+    const order = shuffle((base.options || []).map((_, i) => i));
+    perm[qi] = order;
+    return { ...applyOptPerm(base, order), qi };
+  });
   // 预填充同组 groupStem
   const lastGroup = {};
   for (const q of qs) {
     if (q.groupStem) { if (q.groupId) lastGroup[q.groupId] = q.groupStem; }
     else if (q.groupId && lastGroup[q.groupId]) q.groupStem = lastGroup[q.groupId];
   }
-  return qs;
+  return { qs, perm };
 }
 
 function startExam() {
@@ -688,12 +965,15 @@ function startExam() {
   S.shuffle = swVal($('swShuffle'));
   S.shuffleOpt = swVal($('swShuffleOpt'));
   S.showExp = swVal($('swShowExp'));
-  S.qs = buildQuestions();
+  const built = buildQuestions();
+  S.qs = built.qs;
+  S.perm = built.perm || {};
   S.ans = {};
   S.flags = new Set();
   S.cur = 0;
   S.pass = parseInt($('setPass').value) || 60;
   S.timeLeft = (parseInt($('setTime').value) || 90) * 60;
+  S.startAt = Date.now();
 
   $('exSubj').textContent = S.bank.subject;
   $('exLabel').textContent = S.bank.label + ' · ' + S.qs.length + ' 题';
@@ -703,14 +983,16 @@ function startExam() {
   startTimer();
 }
 
+// 计时以「结束时刻」为基准推算，避免浏览器节流后台标签页导致倒计时变慢/用时失真
 function startTimer() {
+  S.endAt = Date.now() + S.timeLeft * 1000;
   renderTimer();
   clearInterval(S.timer);
   S.timer = setInterval(() => {
-    S.timeLeft--;
+    S.timeLeft = Math.max(0, Math.round((S.endAt - Date.now()) / 1000));
     renderTimer();
     if (S.timeLeft <= 0) { clearInterval(S.timer); alert('⏰ 考试时间到，系统已自动交卷！'); doSubmit(true); }
-  }, 1000);
+  }, 250);
 }
 function renderTimer() {
   const el = $('timer');
@@ -838,12 +1120,14 @@ function qScore(q, userAns) {
 function doSubmit(auto) {
   clearInterval(S.timer);
   closeDlg();
+  const endAt = Date.now();
+  const startAt = S.startAt || endAt;
   let score = 0;
   const details = S.qs.map((q, i) => {
     const u = S.ans[i] || '';
     const sc = qScore(q, u);
     score += sc;
-    return { q, i, u, sc, status: !u ? 'none' : (sc >= 1 ? 'right' : 'wrong') };
+    return { q, i, qi: q.qi, u, sc, status: !u ? 'none' : (sc >= 1 ? 'right' : 'wrong') };
   });
   const total = S.qs.length;
   const correctN = details.filter(d => d.status === 'right').length;
@@ -851,12 +1135,31 @@ function doSubmit(auto) {
   const noneN = details.filter(d => d.status === 'none').length;
   const rate = total ? Math.round(correctN / total * 100) : 0;
   const pass = score >= S.pass;
-  S.result = { details, score, total, correctN, wrongN, noneN, rate, pass };
+  const usedSec = Math.max(0, Math.round((endAt - startAt) / 1000));
+  S.result = { details, score, total, correctN, wrongN, noneN, rate, pass, startAt, endAt, usedSec };
 
-  // 收录错题（仅限作答且答错的题）
-  details.forEach(d => { if (d.status === 'wrong') recordWrong(S.bank, d.i, d.q); });
+  // 落库：一条考试记录（引用式，只存题库下标 + 用户答案 + 得分，体积小且可完整回放）
+  const rec = {
+    id: 'r_' + uid(),
+    bankId: S.bank.id, bankLabel: S.bank.label, subject: S.bank.subject, year: S.bank.year,
+    mode: S.range === 'random' ? 'random' : 'full',
+    startAt, endAt, usedSec, auto: !!auto,
+    pass: S.pass, total, score, correctN, wrongN, noneN, rate, passed: pass,
+    bankFingerprint: bankFingerprint(S.bank),
+    qs: S.qs.map(q => q.qi),
+    optPerm: Object.keys(S.perm || {}).length ? S.perm : null,
+    ans: details.reduce((a, d) => { if (d.u) a[d.i] = d.u; return a; }, {}),
+    sc: details.map(d => d.sc),
+    wrongKeys: details.filter(d => d.status === 'wrong').map(d => S.bank.id + '_' + d.qi),
+  };
+  S.result.recordId = rec.id;
+  const wr = saveRecord(rec);
+  if (!wr.ok) alert('⚠️ 浏览器存储空间不足，本次记录未能保存。\n建议到「考试记录」导出备份后清理旧记录。');
+  else if (wr.dropped) console.warn('存储空间有限，已自动淘汰 ' + wr.dropped + ' 条最旧记录');
 
-  recordHistory(S.bank, total, correctN, rate);
+  // 收录错题（仅限作答且答错的题，带上本次场次 rid）
+  details.forEach(d => { if (d.status === 'wrong') recordWrong(S.bank, d.qi, d.q, rec.id); });
+
   renderResult(auto);
   showPage('result');
 }
@@ -870,37 +1173,37 @@ function renderResult(auto) {
   $('resMax').textContent = '/ ' + r.total + ' 题';
   $('resVerdict').textContent = r.pass ? '🎉 恭喜通过！' : '😥 未达及格线，继续加油！';
   $('resVerdict').className = 'verdict ' + (r.pass ? 'pass' : 'fail');
-  $('resMeta').textContent = `及格线 ${S.pass} 分 · 实际得分 ${r.score.toFixed(1)} 分 · 折算 ${pct}%${r.noneN ? ' · 未作答 ' + r.noneN + ' 题' : ''}`;
+  $('resMeta').textContent = `及格线 ${S.pass} 分 · 实际得分 ${r.score.toFixed(1)} 分 · 折算 ${pct}% · 用时 ${fmtDur(r.usedSec)}${r.noneN ? ' · 未作答 ' + r.noneN + ' 题' : ''}${auto ? ' · 超时自动交卷' : ''}`;
   $('rsTotal').textContent = r.total;
   $('rsCorrect').textContent = r.correctN;
   $('rsWrong').textContent = r.wrongN;
   $('rsRate').textContent = r.rate + '%';
   setReviewFilter('all');
 }
-
 function setReviewFilter(f, btn) {
   S.reviewFilter = f;
-  document.querySelectorAll('.filter-btns button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+  document.querySelectorAll('#page-result .filter-btns button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
   renderReview();
 }
-function renderReview() {
-  const r = S.result;
-  const box = $('reviewList');
-  const list = r.details.filter(d => {
-    if (S.reviewFilter === 'wrong') return d.status === 'wrong';
-    if (S.reviewFilter === 'right') return d.status === 'right';
+/* 解析区渲染：结果页与"考试记录详情页"共用（opts = { filter, showExp, isRecord }） */
+function reviewHtml(details, opts) {
+  opts = opts || {};
+  const showExp = opts.showExp !== false;
+  const list = (details || []).filter(d => {
+    if (opts.filter === 'wrong') return d.status === 'wrong';
+    if (opts.filter === 'right') return d.status === 'right';
     return true;
   });
-  box.innerHTML = list.map((d, k) => {
+  const total = (details || []).length;
+  return list.map(d => {
     const q = d.q;
-    const correct = q.answer;
+    const correct = q.answer || '';
     const isRight = d.sc >= 1;
-    const show = S.showExp;
-    let groupHtml = q.groupStem ? `<div class="group-box"><span class="gb-tag">${q.type === 'B' ? '共用备选答案' : '共用病例'}</span>${esc(q.groupStem)}</div>` : '';
-    const optHtml = q.options.map((o, oi) => {
+    let groupHtml = q.groupStem ? `<div class="group-box"><span class="gb-tag">${q.type === 'B' ? '共用备选答案' : q.type === 'C' ? '共用病例' : '共用题干'}</span>${esc(q.groupStem)}</div>` : '';
+    const optHtml = (q.options || []).map((o, oi) => {
       const letter = 'ABCDE'[oi];
       const isC = correct.includes(letter);
-      const isU = d.u.includes(letter);
+      const isU = (d.u || '').includes(letter);
       let mark = '';
       if (isC && isU) mark = '✅';
       else if (isC) mark = '✔（漏选）';
@@ -908,48 +1211,340 @@ function renderReview() {
       return `<div class="opt" style="cursor:default">${mark ? '<span class="ol" style="background:' + (isC ? 'var(--green)' : 'var(--red)') + ';color:#fff">' + letter + '</span>' : '<span class="ol">' + letter + '</span>'}<span class="ot">${esc(stripOpt(o))} ${mark}</span></div>`;
     }).join('');
     const ansText = `<div class="ex-ans ${isRight ? 'right' : 'wrong'}">正确答案：${correct}${d.u ? '　你的答案：' + d.u : '　你的答案：（未作答）'}　${d.status === 'none' ? '未作答，得 0 分' : (isRight ? '✓ 得 ' + d.sc + ' 分' : '✗ 得 ' + d.sc + ' 分')}</div>`;
+    const badge = d.status === 'wrong'
+      ? '<span class="badge fail">答错' + (opts.isRecord ? '' : ' · 已入错题本') + '</span>'
+      : d.status === 'right' ? '<span class="badge pass">答对</span>' : '<span class="badge">未作答</span>';
     return `<div class="qcard">
       <div class="q-meta">
         <span class="type-badge tb-${q.type}">${q.type}型</span>
-        <span class="q-num">${r.details.indexOf(d) + 1} 题</span>
-        ${d.status === 'wrong' ? '<span class="badge" style="background:#fee2e2;color:var(--red)">答错 · 已入错题本</span>' : d.status === 'right' ? '<span class="badge" style="background:#dcfce7;color:var(--green)">答对</span>' : '<span class="badge" style="background:#f1f5f9;color:var(--sub)">未作答</span>'}
+        <span class="q-num">第 ${d.i + 1} 题 / 共 ${total} 题</span>
+        ${badge}
       </div>
       ${groupHtml}
       <div class="stem">${esc(q.stem)}</div>
       <div class="opts">${optHtml}</div>
-      <div class="explain">${ansText}${q.explanation ? '<div style="margin-top:4px">解析：' + esc(q.explanation) + '</div>' : ''}</div>
+      <div class="explain">${ansText}${showExp && q.explanation ? '<div style="margin-top:4px">解析：' + esc(q.explanation) + '</div>' : ''}</div>
     </div>`;
-  }).join('') || '<div class="empty-tip">暂无题目</div>';
+  }).join('') || '<div class="empty-tip">' + (total ? '当前筛选条件下没有题目。' : '该场试卷内容已无法回放（题库改动或数据缺失）。') + '</div>';
+}
+function renderReview() {
+  $('reviewList').innerHTML = reviewHtml(S.result ? S.result.details : [], {
+    filter: S.reviewFilter, showExp: S.showExp, isRecord: false,
+  });
 }
 
-function retry() { selectBank(S.bank.id, S.range); }
+function retry() { selectBank(S.bank.id, S.range === 'random' ? 'random' : 'full'); }
 
 /* ============================================================
-   错题本
+   考试记录：列表页
    ============================================================ */
-function goWrongbook() {
+const RC = { subject: 'all', result: 'all' };
+
+function recModeText(r) { return r.mode === 'random' ? '随机抽题' : '整卷'; }
+function sessionLabel(rid) {
+  const r = getRecord(rid);
+  if (!r) return '已清理的记录';
+  return recTime(r.startAt) + ' ' + r.bankLabel;
+}
+
+function goRecords() {
+  showPage('records');
+  renderRecords();
+}
+function renderRecords() {
+  const all = getRecords();
+  $('recCount').textContent = all.length ? '(' + all.length + ')' : '';
+
+  // 科目 / 结果 筛选 chips
+  const subs = [];
+  all.forEach(r => { if (r.subject && subs.indexOf(r.subject) < 0) subs.push(r.subject); });
+  $('recSubjectChips').innerHTML = [['全部', 'all']].concat(subs.map(s => [s, s]))
+    .map(p => `<button class="${RC.subject === p[1] ? 'on' : ''}" onclick="setRecListFilter('subject','${esc(p[1])}')">${esc(p[0])}</button>`).join('');
+  $('recResultChips').innerHTML = [['全部', 'all'], ['仅及格', 'pass'], ['仅未及格', 'fail']]
+    .map(p => `<button class="${RC.result === p[1] ? 'on' : ''}" onclick="setRecListFilter('result','${p[1]}')">${esc(p[0])}</button>`).join('');
+
+  const list = all.filter(r => {
+    if (RC.subject !== 'all' && r.subject !== RC.subject) return false;
+    if (RC.result === 'pass' && !r.passed) return false;
+    if (RC.result === 'fail' && r.passed) return false;
+    return true;
+  });
+
+  const empty = $('recordEmpty');
+  empty.classList.toggle('hidden', list.length > 0);
+  empty.textContent = all.length
+    ? '当前筛选条件下没有记录。'
+    : '还没有考试记录。去题库做一套真题，交卷后会自动保存，之后可以随时回看完整试卷与解析。';
+
+  $('recordList').innerHTML = list.map(r => {
+    const pct = r.total ? Math.round((Number(r.score) || 0) / r.total * 100) : 0;
+    const wn = (r.wrongKeys || []).length || Number(r.wrongN) || 0;
+    return `<div class="rec-item card ${r.passed ? 'pass' : 'fail'}">
+      <div class="ri-top">
+        <span class="badge">${esc(r.bankLabel)}</span>
+        <span class="badge">${recModeText(r)} ${r.total} 题</span>
+        <span class="badge ${r.passed ? 'pass' : 'fail'}">${r.passed ? '✅ 通过' : '❌ 未通过'}</span>
+        ${r.auto ? '<span class="badge auto">⏰ 超时交卷</span>' : ''}
+      </div>
+      <div class="ri-score">
+        <b>${Number(r.score) || 0}</b>
+        <span>/ ${r.total} 分　及格线 ${r.pass} 分　折算 ${pct}%</span>
+      </div>
+      <div class="ri-meta">
+        <span>🕐 ${recTime(r.startAt)}</span>
+        <span>⏱ 用时 ${fmtDur(r.usedSec)}</span>
+        <span>✅ 答对 ${r.correctN}</span>
+        <span>❌ 答错 ${r.wrongN}</span>
+        ${r.noneN ? '<span>⬜ 未答 ' + r.noneN + '</span>' : ''}
+        <span>正确率 ${r.rate}%</span>
+      </div>
+      <div class="ri-actions">
+        <button class="btn btn-pri" style="font-size:13px;padding:8px 14px" onclick="openRecord('${r.id}')">查看试卷</button>
+        <button class="btn btn-ghost" style="font-size:13px;padding:8px 14px" onclick="retryRecord('${r.id}')">再考一次</button>
+        ${wn ? '<button class="btn btn-ghost" style="font-size:13px;padding:8px 14px" onclick="goWrongbook(\'' + r.id + '\')">本场错题 ' + wn + '</button>' : ''}
+        <button class="btn btn-line" style="font-size:13px;padding:8px 14px" onclick="deleteRecordConfirm('${r.id}')">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function setRecListFilter(k, v) { RC[k] = v; renderRecords(); }
+
+function retryRecord(id) {
+  const r = getRecord(id);
+  if (!r) return;
+  if (!findBank(r.bankId)) { alert('该题库已不存在，无法再考一次。'); return; }
+  selectBank(r.bankId, r.mode === 'random' ? 'random' : 'full');
+}
+function deleteRecordConfirm(id) {
+  const r = getRecord(id);
+  if (!r) return;
+  if (confirm('确定删除这条记录？\n\n' + recTime(r.startAt) + '　' + r.bankLabel + '　' + (Number(r.score) || 0) + '/' + r.total + ' 分\n\n（错题本中的错题不会被删除）')) {
+    deleteRecord(id);
+    renderRecords();
+  }
+}
+function clearRecordsConfirm() {
+  const n = getRecords().length;
+  if (!n) { alert('暂无考试记录。'); return; }
+  if (confirm('确定清空全部 ' + n + ' 条考试记录？此操作不可恢复，建议先「导出备份」。\n（错题本不受影响）')) {
+    clearRecords();
+    renderRecords();
+  }
+}
+
+/* ============================================================
+   考试记录：详情页（完整试卷回放）
+   ============================================================ */
+const RD = { rid: null, rec: null, details: [], filter: 'all', showExp: true };
+
+function openRecord(id) {
+  if (!id) return;
+  const rec = getRecord(id);
+  if (!rec) { alert('该记录不存在或已被清理。'); return; }
+  const hy = hydrateRecord(rec);
+  RD.rid = id; RD.rec = rec; RD.details = hy.details;
+  RD.filter = 'all'; RD.showExp = true;
+
+  document.querySelectorAll('#page-recDetail .filter-btns button').forEach(b => b.classList.toggle('on', b.dataset.f === 'all'));
+  const eb = $('rdExpBtn');
+  eb.classList.add('on');
+  eb.textContent = '隐藏解析';
+
+  const tip = $('rdStale');
+  if (hy.fromSnap) {
+    tip.textContent = 'ℹ️ 该场试卷使用了导入的备份快照回放（题库已更新）。';
+    tip.classList.remove('hidden');
+  } else if (hy.stale) {
+    tip.textContent = '⚠️ 该题库已更新或题目缺失，本场试卷无法完整回放，仅显示分数与统计。';
+    tip.classList.remove('hidden');
+  } else {
+    tip.classList.add('hidden');
+  }
+
+  const pct = rec.total ? Math.round((Number(rec.score) || 0) / rec.total * 100) : 0;
+  $('rdRing').style.setProperty('--p', pct);
+  $('rdScore').textContent = Number(rec.score) || 0;
+  $('rdMax').textContent = '/ ' + rec.total + ' 题';
+  $('rdVerdict').textContent = rec.passed ? '🎉 本次已通过' : '😥 本次未达及格线';
+  $('rdVerdict').className = 'verdict ' + (rec.passed ? 'pass' : 'fail');
+  $('rdMeta').textContent = rec.bankLabel + ' · ' + recModeText(rec) + ' · ' + recTime(rec.startAt) + ' ~ ' + recTime(rec.endAt)
+    + ' · 用时 ' + fmtDur(rec.usedSec) + (rec.auto ? ' · 超时自动交卷' : '')
+    + ' · 及格线 ' + rec.pass + ' 分 · 折算 ' + pct + '%';
+  $('rdTotal').textContent = rec.total;
+  $('rdCorrect').textContent = rec.correctN;
+  $('rdWrong').textContent = rec.wrongN;
+  $('rdRate').textContent = rec.rate + '%';
+
+  const wn = (rec.wrongKeys || []).length;
+  const wb = $('rdWrongBtn');
+  if (wn) { wb.textContent = '📕 本场错题 ' + wn + ' 题 →'; wb.classList.remove('hidden'); }
+  else wb.classList.add('hidden');
+
+  renderRecDetail();
+  showPage('recDetail');
+}
+function renderRecDetail() {
+  $('recReviewList').innerHTML = reviewHtml(RD.details, { filter: RD.filter, showExp: RD.showExp, isRecord: true });
+}
+function setRecFilter(f, btn) {
+  RD.filter = f;
+  document.querySelectorAll('#page-recDetail .filter-btns button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+  renderRecDetail();
+}
+function toggleRecExp() {
+  RD.showExp = !RD.showExp;
+  const b = $('rdExpBtn');
+  b.classList.toggle('on', RD.showExp);
+  b.textContent = RD.showExp ? '隐藏解析' : '显示解析';
+  renderRecDetail();
+}
+function jumpToWrongbook() { goWrongbook(RD.rid); }
+function retryCurRecord() { if (RD.rid) retryRecord(RD.rid); }
+function backFromRecord() { showPage('records'); renderRecords(); }
+
+/* ============================================================
+   导出 / 导入（无账号场景的数据保险）
+   ============================================================ */
+function exportRecords() {
+  const recs = getRecords();
+  if (!recs.length) { alert('暂无考试记录可导出。'); return; }
+  // 导出时把"题库引用"展开为完整快照，导出的文件自包含，换设备/题库更新后仍可回放
+  const payload = {
+    app: 'zy-exam', version: 1, exportedAt: Date.now(), count: recs.length,
+    records: recs.map(r => Object.assign({}, r, { snap: expandSnapshot(r) })),
+  };
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const name = '模拟考试记录_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + '.json';
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+function importRecords(input) {
+  const f = input && input.files && input.files[0];
+  if (input) input.value = '';
+  if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    let obj;
+    try { obj = JSON.parse(fr.result); } catch (e) { alert('❌ 文件不是合法的 JSON，导入失败。'); return; }
+    const arr = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.records) ? obj.records : null);
+    if (!arr) { alert('❌ 文件格式不认识（缺少 records 数组）。'); return; }
+
+    const cur = getRecords();
+    const have = new Set(cur.map(r => r.id));
+    const valid = [];
+    let skipped = 0;
+    for (const r of arr) {
+      if (!r || typeof r !== 'object' || !Array.isArray(r.qs) || !r.bankId) { skipped++; continue; }
+      if (have.has(r.id)) continue;
+      const bank = findBank(r.bankId);
+      const fresh = bank && (!r.bankFingerprint || bankFingerprint(bank) === r.bankFingerprint);
+      const rec = {
+        id: r.id || ('r_' + uid()),
+        bankId: r.bankId, bankLabel: r.bankLabel || r.bankId, subject: r.subject || '', year: r.year || '',
+        mode: r.mode === 'random' ? 'random' : 'full',
+        startAt: Number(r.startAt) || Date.now(), endAt: Number(r.endAt) || Number(r.startAt) || Date.now(),
+        usedSec: Number(r.usedSec) || 0, auto: !!r.auto,
+        pass: Number(r.pass) || 0, total: Number(r.total) || r.qs.length, score: Number(r.score) || 0,
+        correctN: Number(r.correctN) || 0, wrongN: Number(r.wrongN) || 0, noneN: Number(r.noneN) || 0,
+        rate: Number(r.rate) || 0, passed: !!r.passed,
+        bankFingerprint: r.bankFingerprint || (bank ? bankFingerprint(bank) : ''),
+        qs: r.qs.slice(), optPerm: r.optPerm || null, ans: r.ans || {}, sc: r.sc || [],
+        wrongKeys: Array.isArray(r.wrongKeys) ? r.wrongKeys : [],
+      };
+      // 题库对不上（换了设备/题库已更新）时保留快照，否则丢弃以节省空间
+      if (!fresh && Array.isArray(r.snap)) rec.snap = r.snap;
+      valid.push(rec);
+    }
+    if (!valid.length) {
+      alert('没有可导入的新记录（可能已存在，或数据格式不符）。' + (skipped ? '\n已跳过 ' + skipped + ' 条无效数据。' : ''));
+      return;
+    }
+    if (!confirm('解析到 ' + valid.length + ' 条记录，是否与现有 ' + cur.length + ' 条合并导入？\n\n（点击"取消"放弃本次导入）')) return;
+
+    const merged = valid.concat(cur).sort((a, b) => (Number(b.startAt) || 0) - (Number(a.startAt) || 0));
+    const over = Math.max(0, merged.length - REC_LIMIT);
+    const w = setRecords(merged);
+    renderRecords();
+    alert('✅ 导入完成：新增 ' + valid.length + ' 条'
+      + (skipped ? '\n· 跳过无效数据 ' + skipped + ' 条' : '')
+      + (over ? '\n· 超出 ' + REC_LIMIT + ' 条上限，已淘汰最旧 ' + over + ' 条' : '')
+      + (w.ok ? '' : '\n⚠️ 浏览器存储空间不足，部分记录未能写入。'));
+  };
+  fr.readAsText(f, 'utf-8');
+}
+
+/* ============================================================
+   错题本（支持按考试场次 / 科目筛选）
+   ============================================================ */
+const WB = { session: 'all', subject: 'all', sort: 'recent' };
+
+function goWrongbook(rid) {
+  // 顶栏进入（无参）= 重置筛选；从记录详情进入 = 自动套用该场次筛选
+  WB.session = rid || 'all';
+  WB.subject = 'all';
+  if (rid) WB.sort = 'recent';
   showPage('wrong');
   renderWrong();
 }
 function renderWrong() {
   const list = getWrong();
   $('wrongCount').textContent = list.length ? '(' + list.length + ')' : '';
-  const box = $('wrongList');
-  $('wrongEmpty').classList.toggle('hidden', list.length > 0);
-  box.innerHTML = list.map(w => {
-    const q = w.q;
+
+  // 场次 chips：只列出"确有错题"的考试场次
+  const sessions = getRecords().filter(r => (r.wrongKeys || []).length);
+  if (WB.session !== 'all' && !sessions.some(r => r.id === WB.session)) WB.session = 'all';
+  $('wrongSessionChips').innerHTML =
+    `<button class="${WB.session === 'all' ? 'on' : ''}" onclick="setWbFilter('session','all')">全部 <span class="cn">${list.length}</span></button>`
+    + sessions.map(r => {
+      const n = list.filter(w => (w.sessions || []).some(s => s.rid === r.id)).length;
+      return `<button class="${WB.session === r.id ? 'on' : ''}" onclick="setWbFilter('session','${r.id}')">${esc(sessionLabel(r.id))} <span class="cn">${n}</span></button>`;
+    }).join('');
+
+  const subs = [];
+  list.forEach(w => { const s = w.subject || w.bankLabel || '未知'; if (subs.indexOf(s) < 0) subs.push(s); });
+  $('wrongSubjectChips').innerHTML = [['全部', 'all']].concat(subs.map(s => [s, s]))
+    .map(p => `<button class="${WB.subject === p[1] ? 'on' : ''}" onclick="setWbFilter('subject','${esc(p[1])}')">${esc(p[0])}</button>`).join('');
+  $('wrongSortChips').innerHTML = [['最近答错', 'recent'], ['错误次数', 'times']]
+    .map(p => `<button class="${WB.sort === p[1] ? 'on' : ''}" onclick="setWbFilter('sort','${p[1]}')">${p[0]}</button>`).join('');
+
+  let show = list.filter(w => {
+    if (WB.session !== 'all' && !(w.sessions || []).some(s => s.rid === WB.session)) return false;
+    const s = w.subject || w.bankLabel || '未知';
+    if (WB.subject !== 'all' && s !== WB.subject) return false;
+    return true;
+  });
+  show = WB.sort === 'times'
+    ? show.slice().sort((a, b) => (Number(b.times) || 0) - (Number(a.times) || 0))
+    : show.slice().sort((a, b) => (Number(b.last) || 0) - (Number(a.last) || 0));
+
+  const empty = $('wrongEmpty');
+  empty.classList.toggle('hidden', show.length > 0);
+  empty.textContent = list.length
+    ? '当前筛选条件下没有错题。'
+    : '暂无错题。做错的题会自动收录到这里，方便反复巩固。';
+
+  $('wrongList').innerHTML = show.map(w => {
+    const q = w.q || {};
+    const ss = w.sessions || [];
+    const srcs = ss.slice(0, 3).map(s => '<span class="badge">' + recTime(s.t) + '</span>').join('')
+      + (ss.length > 3 ? '<span class="badge">+' + (ss.length - 3) + '</span>' : '');
     return `<div class="wrong-item card">
       <div class="wi-top">
-        <span class="type-badge tb-${q.type}">${q.type}型</span>
-        <span class="badge">${esc(w.bankLabel)}</span>
-        <span class="badge">错了 ${w.times} 次</span>
-        <span class="badge">${new Date(w.last).toLocaleDateString()}</span>
+        <span class="type-badge tb-${q.type || 'A'}">${q.type || 'A'}型</span>
+        <span class="badge">${esc(w.bankLabel || '')}</span>
+        <span class="badge">错了 ${Number(w.times) || 1} 次</span>
+        <span class="badge">${w.last ? new Date(w.last).toLocaleDateString() : ''}</span>
       </div>
       <div class="wi-stem">${esc(q.stem)}</div>
       <div class="wi-meta">
-        <span>正确答案：<b style="color:var(--green)">${q.answer}</b></span>
+        <span>正确答案：<b style="color:var(--green)">${esc(q.answer || '')}</b></span>
         ${q.explanation ? '<span>附解析</span>' : ''}
       </div>
+      <div class="wi-src">出现场次：${ss.length ? srcs : '<span class="badge">早期记录（无场次）</span>'}</div>
       <div class="wi-actions">
         <button class="btn btn-ghost" style="font-size:13px;padding:7px 12px" onclick="reviewWrong('${w.key}')">查看详情</button>
         <button class="btn btn-line" style="font-size:13px;padding:7px 12px" onclick="removeWrong('${w.key}');renderWrong()">移除</button>
@@ -957,6 +1552,8 @@ function renderWrong() {
     </div>`;
   }).join('');
 }
+function setWbFilter(k, v) { WB[k] = v; renderWrong(); }
+
 function reviewWrong(key) {
   const w = getWrong().find(x => x.key === key);
   if (!w) return;
@@ -971,10 +1568,13 @@ function clearWrongbook() {
    页面切换
    ============================================================ */
 function showPage(name) {
-  ['home', 'setup', 'exam', 'result', 'wrong'].forEach(p => $('page-' + p).classList.add('hidden'));
+  ['home', 'setup', 'exam', 'result', 'wrong', 'records', 'recDetail'].forEach(p => $('page-' + p).classList.add('hidden'));
   $('page-' + name).classList.remove('hidden');
-  if (name === 'home') { $('navHome').style.display = 'none'; $('navWrong').style.display = ''; }
-  else { $('navHome').style.display = ''; $('navWrong').style.display = 'none'; }
+  const isHome = name === 'home';
+  $('navHome').style.display = isHome ? 'none' : '';
+  $('navWrong').style.display = isHome ? '' : 'none';
+  // 就处在记录相关页面时，隐藏"考试记录"入口避免重复
+  $('navRecords').style.display = (name === 'records' || name === 'recDetail') ? 'none' : '';
   window.scrollTo(0, 0);
 }
 
@@ -982,7 +1582,9 @@ function showPage(name) {
    初始化
    ============================================================ */
 (function init() {
+  migrateWrong();   // 一次性规范化历史错题（合并重复条目 + 重建稳定 key）
   $('wrongCount').textContent = wrongCount() ? '(' + wrongCount() + ')' : '';
+  $('recCount').textContent = getRecords().length ? '(' + getRecords().length + ')' : '';
   goHome();
 })();
 </script>
