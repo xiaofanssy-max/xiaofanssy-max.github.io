@@ -25,6 +25,7 @@
   --cyan: #0891b2;
   --radius: 14px;
   --shadow: 0 6px 24px rgba(30, 60, 120, .10);
+  --topbar-h: 56px;      /* 顶栏高度：sticky 偏移统一走这个变量 */
 }
 html { -webkit-text-size-adjust: 100%; }
 body {
@@ -43,6 +44,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   padding: 11px 20px; border-radius: 10px; font-size: 15px; font-weight: 600;
+  white-space: nowrap;   /* 按钮文字永不折行 */
   transition: transform .08s ease, box-shadow .15s ease, opacity .15s ease;
 }
 .btn:active { transform: scale(.97); }
@@ -60,17 +62,25 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   background: linear-gradient(135deg, #1e3a8a, #2563eb);
   color: #fff; padding: 12px 16px;
   display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: nowrap;
   box-shadow: 0 2px 10px rgba(20,40,80,.25);
 }
-.topbar .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .5px; }
+.topbar .brand {
+  display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .5px;
+  flex: 1 1 auto; min-width: 0;
+}
 .topbar .brand .logo {
-  width: 32px; height: 32px; border-radius: 9px; background: rgba(255,255,255,.18);
+  width: 32px; height: 32px; flex: none; border-radius: 9px; background: rgba(255,255,255,.18);
   display: flex; align-items: center; justify-content: center; font-size: 17px;
 }
-.topbar .top-actions { display: flex; gap: 8px; align-items: center; }
+/* 标题单行：宽度不足时省略，绝不折行（保持顶栏高度恒定） */
+.topbar .brand .brand-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar .brand .brand-short { display: none; }
+.topbar .top-actions { display: flex; gap: 8px; align-items: center; flex: none; }
 .topbar .tb-btn {
   background: rgba(255,255,255,.16); color: #fff; border-radius: 9px;
   padding: 7px 12px; font-size: 13px; font-weight: 600;
+  flex: none; white-space: nowrap;
 }
 .topbar .tb-btn:hover { background: rgba(255,255,255,.26); }
 
@@ -81,8 +91,22 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .home-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
 .home-head h2 { font-size: 20px; }
 .stat-pills { display: flex; gap: 8px; flex-wrap: wrap; }
-.stat-pill { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 5px 13px; font-size: 13px; color: var(--sub); }
+.stat-pill {
+  background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 5px 13px;
+  font-size: 13px; color: var(--sub); white-space: nowrap;
+}
 .stat-pill b { color: var(--pri); font-size: 15px; }
+
+/* 首页统计：固定 4 列栅格 + 数值竖排，窄屏不会出现「3+1」掉行 */
+.stat-pills.stat-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px; width: 100%; max-width: 520px;
+}
+.stat-grid .stat-pill {
+  text-align: center; padding: 7px 6px; font-size: 12px; border-radius: 12px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+.stat-grid .stat-pill b { display: block; font-size: 18px; line-height: 1.25; margin-top: 1px; }
 
 .subject-block { margin-bottom: 22px; }
 .subject-title {
@@ -141,13 +165,13 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
    考试页
    ============================================================ */
 .exam-head {
-  position: sticky; top: 0; z-index: 20;
+  position: sticky; top: var(--topbar-h); z-index: 20;
   background: #fff; border-bottom: 1px solid var(--line);
   padding: 10px 14px; display: flex; align-items: center; gap: 10px;
 }
 .exam-head .eh-info { flex: 1; min-width: 0; }
 .exam-head .eh-subj { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.exam-head .eh-label { font-size: 12px; color: var(--sub); }
+.exam-head .eh-label { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .timer {
   background: #111827; color: #fff; font-variant-numeric: tabular-nums;
   border-radius: 10px; padding: 7px 12px; font-size: 17px; font-weight: 700; letter-spacing: 1px;
@@ -170,7 +194,10 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .exam-layout .question-area { grid-area: qarea; min-width: 0; padding: 0 24px; }
 
 /* 答题卡 */
-.answer-card { position: sticky; top: 76px; align-self: start; max-height: calc(100vh - 96px); overflow-y: auto; }
+.answer-card {
+  position: sticky; top: calc(var(--topbar-h) + 64px); align-self: start;
+  max-height: calc(100vh - var(--topbar-h) - 84px); overflow-y: auto;
+}
 .answer-card .ac-stats { display: flex; gap: 6px; margin-bottom: 12px; }
 .answer-card .ac-stats .st { flex: 1; background: var(--bg); border-radius: 9px; padding: 7px 4px; text-align: center; }
 .answer-card .ac-stats .st b { display: block; font-size: 17px; }
@@ -351,6 +378,28 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .answer-card .ng-grid { grid-template-columns: repeat(8, 1fr); }
   .result-stats { grid-template-columns: repeat(2, 1fr); }
   .page { padding: 14px 12px 40px; }
+  /* 标题独占一行，统计栏另起一行铺满 */
+  .home-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .home-head .stat-pills:not(.stat-grid) { align-self: flex-start; }
+  .stat-pills.stat-grid { max-width: none; }
+}
+
+/* 小屏顶栏：短标题 + 紧凑按钮，保证始终单行 */
+@media (max-width: 430px) {
+  :root { --topbar-h: 52px; }
+  .topbar { padding: 10px 12px; }
+  .topbar .brand .brand-full { display: none; }
+  .topbar .brand .brand-short { display: inline; }
+  .topbar .tb-btn { padding: 6px 10px; font-size: 12.5px; border-radius: 8px; }
+  .home-head h2 { font-size: 18px; }
+}
+@media (max-width: 380px) {
+  .series-card .sc-chips i { padding: 2px 7px; font-size: 11.5px; }
+}
+/* 极小屏：隐去 logo，把宽度让给标题，避免标题被省略号截断 */
+@media (max-width: 340px) {
+  :root { --topbar-h: 48px; }
+  .topbar .brand .logo { display: none; }
 }
 
 /* ---------- 图片题（选项为彩图/结构式） ---------- */
@@ -460,7 +509,8 @@ input[readonly] { background: #f4f6fb; color: var(--sub); cursor: not-allowed; }
 <header class="topbar">
   <div class="brand">
     <span class="logo">📘</span>
-    <span>执业药师 · 中药模拟考试</span>
+    <span class="brand-name brand-full">执业药师 · 中药模拟考试</span>
+    <span class="brand-name brand-short">中药模拟考试</span>
   </div>
   <div class="top-actions">
     <button class="tb-btn" id="navWrong" onclick="goWrongbook()">错题本 <span id="wrongCount" style="opacity:.85"></span></button>
@@ -473,7 +523,7 @@ input[readonly] { background: #f4f6fb; color: var(--sub); cursor: not-allowed; }
 <div id="page-home" class="page">
   <div class="home-head">
     <h2>选择试卷分类开始练习</h2>
-    <div class="stat-pills">
+    <div class="stat-pills stat-grid">
       <span class="stat-pill">考试次数 <b id="stExams"></b></span>
       <span class="stat-pill">累计做题 <b id="stDone"></b></span>
       <span class="stat-pill">正确率 <b id="stRate"></b></span>
