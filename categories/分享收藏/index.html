@@ -7,7 +7,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://yunfengzi.top/images/avatar.jpg">
 <meta property="article:published_time" content="2026-03-26T16:00:00.000Z">
-<meta property="article:modified_time" content="2026-07-11T19:03:14.728Z">
+<meta property="article:modified_time" content="2026-11-07T08:27:28.480Z">
 <meta property="article:author" content="云风子">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://yunfengzi.top/images/avatar.jpg"><script type="application/ld+json"></script><link rel="shortcut icon" href="/img/favicon.ico"><link rel="canonical" href="https://yunfengzi.top/categories/%E5%88%86%E4%BA%AB%E6%94%B6%E8%97%8F/index.html"><link rel="preconnect" href="//unpkg.com"/><link rel="stylesheet" href="/css/index.css?v=5.5.4"><link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@7.1.0/css/all.min.css"><script>
@@ -369,6 +369,59 @@
 .btn-copy:hover { background: var(--theme-color, #49b1f5); color: #fff; }
 .btn-copy.copied { background: #27ae60; border-color: #27ae60; color: #fff; }
 
+/* 资源卡片图标 */
+.magnet-card-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  background: rgba(73,177,245,.12);
+  color: var(--theme-color, #49b1f5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+.magnet-card.is-empty { opacity: .6; }
+
+/* 分页 */
+.magnet-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+.pager-btn {
+  padding: 8px 18px;
+  border: 1px solid var(--theme-color, #49b1f5);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theme-color, #49b1f5);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all .15s;
+}
+.pager-btn:hover:not(:disabled) { background: var(--theme-color, #49b1f5); color: #fff; }
+.pager-btn:disabled { opacity: .4; cursor: not-allowed; }
+.pager-info { font-size: 13px; color: var(--secondtext, #666); }
+.btn-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 12px;
+  margin-left: 6px;
+  border: 1px solid var(--theme-color, #49b1f5);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--theme-color, #49b1f5);
+  font-size: 12px;
+  text-decoration: none;
+  transition: all .15s;
+}
+.btn-open:hover { background: var(--theme-color, #49b1f5); color: #fff; }
+
 /* 加载动画 */
 .spinner {
   display: inline-block;
@@ -390,78 +443,59 @@
     </div>
     <div id="magnetStatus" class="magnet-status">输入关键词开始搜索</div>
     <div id="magnetResults" class="magnet-results"></div>
+    <div id="magnetPager" class="magnet-pager"></div>
   </div>
   <div id="magnetDetail" class="magnet-detail"></div>
 </div>
 
 <script>
-const API_BASE = 'https://web5.mukaku.com/prod/api/v1';
-const APP_ID = '83768d9ad4';
-const IDENTITY = '23734adac0301bccdcb107c4aa21f96c';
+const API_BASE = 'https://api.yunfengzi.top';
 
-// 豆瓣搜索代理（部署后替换为你的 Cloudflare Worker 地址）
-const DOUBAN_PROXY_URL = 'https://api.yunfengzi.top/douban-search?q=';
-// 本地开发豆瓣代理
-const LOCAL_PROXY_URL = 'http://localhost:4001/api/douban-search?q=';
+let currentKeyword = '';
 
-function apiParams(extra) {
-  return { app_id: APP_ID, identity: IDENTITY, ...extra };
-}
-
-async function searchMagnet() {
+async function searchMagnet(page) {
   const kw = document.getElementById('magnetKeyword').value.trim();
   if (!kw) return;
 
   const btn = document.getElementById('magnetSearchBtn');
   const status = document.getElementById('magnetStatus');
   const results = document.getElementById('magnetResults');
-  const detail = document.getElementById('magnetDetail');
+  const pager = document.getElementById('magnetPager');
+
+  const pageNo = page || 1;
+  currentKeyword = kw;
 
   btn.disabled = true;
   btn.textContent = '搜索中...';
-  status.innerHTML = '<div class="spinner"></div> 搜索中...';
+  status.innerHTML = '<div class="spinner"></div> 搜索中...（资源站响应较慢时可能需要十几秒）';
   results.innerHTML = '';
+  if (pager) pager.innerHTML = '';
   document.getElementById('magnetDetail').className = 'magnet-detail';
   document.getElementById('magnetSearchSection').style.display = 'block';
 
   try {
-    let allItems = [];
+    const resp = await fetch(
+      `${API_BASE}/bt/search?q=${encodeURIComponent(kw)}&page=${pageNo}`,
+      { signal: AbortSignal.timeout(32000) }
+    );
+    const data = await resp.json();
 
-    // 方案1: 通过 Cloudflare Worker 走豆瓣搜索
-    const cfUrl = DOUBAN_PROXY_URL + encodeURIComponent(kw);
-    allItems = await tryDoubanSearch(cfUrl, status, kw);
-
-    // 方案2: Worker 不可用时尝试本地代理
-    if (!allItems.length) {
-      const localUrl = LOCAL_PROXY_URL + encodeURIComponent(kw);
-      allItems = await tryDoubanSearch(localUrl, status, kw);
+    if (!data || typeof data.ok === 'undefined') {
+      status.textContent = '资源接口尚未更新，请稍后再试';
+      return;
     }
-
-    // 方案3: 全部失败，直接搜 mukaku（模糊匹配标题/别名/原标题）
-    if (!allItems.length) {
-      status.innerHTML = '<div class="spinner"></div> 正在直接搜索...';
-      const params = apiParams({ sb: kw, page: 1, limit: 50 });
-      const qs = new URLSearchParams(params).toString();
-      const resp = await fetch(`${API_BASE}/getVideoList?${qs}`);
-      const data = await resp.json();
-      if (data.code === 200) {
-        const items = data.data?.data || [];
-        const kwLow = kw.toLowerCase();
-        allItems.push(...items.filter(i =>
-          i.title.toLowerCase().includes(kwLow) ||
-          (i.otitle && i.otitle.toLowerCase().includes(kwLow)) ||
-          (i.alias && i.alias.toLowerCase().includes(kwLow))
-        ));
-      }
+    if (!data.ok) {
+      status.textContent = '搜索失败：' + (data.error || '接口异常');
+      return;
     }
-
-    if (!allItems.length) {
-      status.textContent = '未找到相关影片，请尝试其他关键词';
+    if (!data.items || !data.items.length) {
+      status.textContent = '未找到相关资源，换个关键词试试';
       return;
     }
 
-    status.textContent = `找到 ${allItems.length} 个结果`;
-    renderResults(allItems);
+    status.textContent = `找到 ${data.total} 条资源，当前第 ${data.page} 页`;
+    renderResults(data.items);
+    renderPager(data);
   } catch (e) {
     status.textContent = '搜索失败，请检查网络后重试';
     console.error(e);
@@ -471,172 +505,114 @@ async function searchMagnet() {
   }
 }
 
-/** 通过豆瓣代理搜索，并行查询 mukaku 详情 */
-async function tryDoubanSearch(proxyUrl, status, kw) {
-  const results = [];
-  let resp;
-  try {
-    resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(5000) });
-  } catch (e) {
-    return results;
+function renderPager(data) {
+  const box = document.getElementById('magnetPager');
+  if (!box) return;
+  const pageSize = data.pageSize || 50;
+  const pages = Math.max(1, Math.ceil((data.total || 0) / pageSize));
+  if (pages <= 1) {
+    box.innerHTML = '';
+    return;
   }
-  if (!resp.ok) return results;
+  box.innerHTML = `
+    <button class="pager-btn" ${data.page <= 1 ? 'disabled' : ''} onclick="searchMagnet(${data.page - 1})">上一页</button>
+    <span class="pager-info">${data.page} / ${pages}</span>
+    <button class="pager-btn" ${data.page >= pages ? 'disabled' : ''} onclick="searchMagnet(${data.page + 1})">下一页</button>`;
+}
 
-  const doubanData = await resp.json();
-  if (!doubanData || !doubanData.length) return results;
-
-  status.innerHTML = `<div class="spinner"></div> 豆瓣匹配 ${doubanData.length} 个结果，正在查询资源...`;
-
-  // 并行查询所有豆瓣 ID 在 mukaku 中的详情
-  const tasks = doubanData.map(item => {
-    const doubanId = item.id;
-    if (!doubanId) return null;
-    const params = apiParams({ id: doubanId });
-    const qs = new URLSearchParams(params).toString();
-    return fetch(`${API_BASE}/getVideoDetail?${qs}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.code === 200 && data.data) return data.data;
-        return null;
-      })
-      .catch(() => null);
-  });
-
-  const videos = await Promise.all(tasks);
-  for (const video of videos) {
-    if (video) results.push(video);
-  }
-
-  return results;
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function renderResults(items) {
   const container = document.getElementById('magnetResults');
   container.innerHTML = items.map(item => {
-    const typeStr = item.type === 2 ? '电视剧' : '电影';
-    const year = item.years || '';
-    const score = item.doub_score ? `⭐ ${item.doub_score}` : '';
-    const img = item.image || '';
-    const desc = item.abstract ? item.abstract.replace(/<[^>]+>/g,'').substring(0,120) : '';
-    return `<div class="magnet-card" onclick="showDetail('${item.idcode}','${item.title.replace(/'/g,"\\'")}')">
-      ${img ? `<img class="magnet-card-img" src="${img}" alt="${item.title}" loading="lazy" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22140%22><rect fill=%22%23f0f0f0%22 width=%22100%22 height=%22140%22/></svg>'">` : '<div class="magnet-card-img"></div>'}
+    const noFile = !item.files;
+    return `<div class="magnet-card${noFile ? ' is-empty' : ''}" onclick="showDetail(${item.tid})">
+      <div class="magnet-card-icon">${noFile ? '🚫' : '🧲'}</div>
       <div class="magnet-card-info">
-        <div class="magnet-card-title">${item.title}</div>
+        <div class="magnet-card-title">${escapeHtml(item.title)}</div>
         <div class="magnet-card-meta">
-          <span class="magnet-card-badge ${item.type===2?'tv':''}">${typeStr}</span>
-          ${year ? `<span>📅 ${year}</span>` : ''}
-          ${score ? `<span>${score}</span>` : ''}
-          ${item.production_area ? `<span>🌍 ${item.production_area}</span>` : ''}
-          ${item.class ? `<span>🏷 ${item.class}</span>` : ''}
+          <span>📎 ${item.files || 0} 个附件</span>
+          <span>👁 ${item.views || 0}</span>
+          ${item.date ? `<span>📅 ${item.date}</span>` : ''}
+          ${noFile ? '<span style="color:#e74c3c">无种子</span>' : ''}
         </div>
-        ${desc ? `<div class="magnet-card-desc">${desc}</div>` : ''}
       </div>
     </div>`;
   }).join('');
 }
 
-async function showDetail(idcode, title) {
+async function showDetail(tid) {
   const searchSection = document.getElementById('magnetSearchSection');
   const detail = document.getElementById('magnetDetail');
 
   searchSection.style.display = 'none';
   detail.className = 'magnet-detail show';
-  detail.innerHTML = '<div class="magnet-detail-inner"><div class="magnet-status"><div class="spinner"></div> 正在获取资源...</div></div>';
+  detail.innerHTML = '<div class="magnet-detail-inner"><div class="magnet-status"><div class="spinner"></div> 正在解析种子...</div></div>';
 
   try {
-    const params = apiParams({ id: idcode });
-    const qs = new URLSearchParams(params).toString();
-    const resp = await fetch(`${API_BASE}/getVideoDetail?${qs}`);
+    const resp = await fetch(`${API_BASE}/bt/links?tid=${encodeURIComponent(tid)}`, {
+      signal: AbortSignal.timeout(30000),
+    });
     const data = await resp.json();
 
-    if (data.code !== 200 || !data.data) {
-      detail.innerHTML = '<div class="magnet-detail-inner"><div class="magnet-status" style="color:var(--secondtext,#666)">获取详情失败</div></div>';
+    const head = '<div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>';
+
+    if (!data.ok) {
+      detail.innerHTML = `<div class="magnet-detail-inner">${head}
+        <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.error || '获取失败')}</div>
+      </div>`;
       return;
     }
 
-    const video = data.data;
-    const ecca = video.ecca || {};
-    const qualities = Object.keys(ecca);
-    const totalSeeds = qualities.reduce((s, q) => s + (ecca[q]?.length || 0), 0);
-
-    // 构建基础头布局
-    let html = `<div class="magnet-detail-inner">
-      <div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>
-      <div class="magnet-detail-header">`;
-    if (video.image) {
-      html += `<img class="magnet-card-img" src="${video.image}" alt="${video.title}" onerror="this.style.display='none'" loading='lazy'>`;
-    }
-    html += `<div><h3 style="margin:0 0 8px">${video.title}</h3>`;
-    const info = [];
-    if (video.years) info.push(`📅 ${video.years}`);
-    if (video.doub_score) info.push(`⭐ ${video.doub_score}`);
-    if (video.production_area) info.push(`🌍 ${video.production_area}`);
-    if (video.class) info.push(`🏷 ${video.class}`);
-    if (video.director) info.push(`🎬 ${video.director}`);
-    html += `<div style="font-size:13px;color:var(--secondtext,#666);line-height:1.8">${info.join(' · ')}</div>`;
-    html += `<div style="font-size:12px;color:var(--secondtext,#666);margin-top:4px">共 ${totalSeeds} 个资源</div>`;
-    html += `</div></div>`;
-
-    if (!qualities.length) {
-      html += '<div style="text-align:center;padding:20px;color:var(--secondtext,#666)">暂无下载资源</div>';
-      html += '</div>';
-      detail.innerHTML = html;
+    if (!data.items || !data.items.length) {
+      detail.innerHTML = `<div class="magnet-detail-inner">${head}
+        <div class="magnet-detail-header">
+          <div><h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3></div>
+        </div>
+        <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.message || '暂无可用磁力')}</div>
+      </div>`;
       return;
     }
 
-    // 清晰度标签
-    html += '<div class="quality-tabs" id="qualityTabs">';
-    qualities.forEach((q, i) => {
-      const count = ecca[q]?.length || 0;
-      html += `<div class="quality-tab${i===0?' active':''}" data-quality="${q}" onclick="switchQuality('${q}')">${q} <span class="count">(${count})</span></div>`;
-    });
-    html += '</div>';
+    let html = `<div class="magnet-detail-inner">${head}
+      <div class="magnet-detail-header">
+        <div>
+          <h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3>
+          <div style="font-size:13px;color:var(--secondtext,#666)">共 ${data.count || 0} 个磁力链接</div>
+        </div>
+      </div>`;
 
-    // 资源容器
-    html += '<div id="qualityContent">';
-    // 默认选中第一个
-    html += renderQualitySeeds(qualities[0], ecca[qualities[0]]);
+    html += '<div class="magnet-group"><div class="magnet-group-title">🧲 磁力链接</div>';
+    for (const item of data.items) {
+      const name = escapeHtml(item.name || '未命名');
+      const magnet = escapeHtml(item.magnet || '');
+      html += `<div class="magnet-item">
+        <div class="magnet-item-info">
+          <div class="magnet-item-name" title="${name}">${name}</div>
+          <div class="magnet-item-size">📦 ${escapeHtml(item.sizeText || '未知大小')}</div>
+        </div>
+        <div class="magnet-item-actions">
+          <button class="btn-copy" data-magnet="${magnet}" onclick="copyMagnet(this, this.dataset.magnet)">复制磁力</button>
+          <a class="btn-open" href="${magnet}">打开</a>
+        </div>
+      </div>`;
+    }
     html += '</div></div>';
-
-    // 保存所有清晰度数据供切换用
-    detail._qualityData = qualities.map(q => ({ name: q, seeds: ecca[q] || [] }));
-    detail._currentQuality = qualities[0];
     detail.innerHTML = html;
   } catch (e) {
-    detail.innerHTML = '<div class="magnet-detail-inner"><div class="magnet-status" style="color:var(--secondtext,#666)">获取资源失败，请重试</div></div>';
+    detail.innerHTML = `<div class="magnet-detail-inner">
+      <div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>
+      <div class="magnet-status" style="color:var(--secondtext,#666)">解析失败，请稍后重试</div>
+    </div>`;
     console.error(e);
   }
-}
-
-function renderQualitySeeds(quality, seeds) {
-  let html = `<div class="magnet-group"><div class="magnet-group-title">📺 ${quality} (${seeds.length} 个资源)</div>`;
-  for (const seed of seeds) {
-    html += `<div class="magnet-item">
-      <div class="magnet-item-info">
-        <div class="magnet-item-name" title="${seed.zname||''}">${seed.zname||'未命名'}</div>
-        <div class="magnet-item-size">📦 ${seed.zsize||'未知大小'}</div>
-      </div>
-      <div class="magnet-item-actions">
-        <button class="btn-copy" onclick="copyMagnet(this,'${(seed.zlink||'').replace(/'/g,"\\'")}')">复制磁力</button>
-      </div>
-    </div>`;
-  }
-  html += '</div>';
-  return html;
-}
-
-function switchQuality(quality) {
-  const detail = document.getElementById('magnetDetail');
-  // 切换标签样式
-  document.querySelectorAll('#qualityTabs .quality-tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.quality === quality);
-  });
-  // 找到对应数据并渲染
-  const data = detail._qualityData;
-  if (!data) return;
-  const item = data.find(d => d.name === quality);
-  if (!item) return;
-  document.getElementById('qualityContent').innerHTML = renderQualitySeeds(item.name, item.seeds);
 }
 
 function backToList() {
@@ -724,4 +700,4 @@ function copyMagnet(btn, magnet) {
         </li>
       
     </ul>
-  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-10-21T09:47:35.798Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
+  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-07T08:28:02.109Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
