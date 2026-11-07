@@ -7,7 +7,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://yunfengzi.top/images/avatar.jpg">
 <meta property="article:published_time" content="2026-03-26T16:00:00.000Z">
-<meta property="article:modified_time" content="2026-11-07T08:53:04.662Z">
+<meta property="article:modified_time" content="2026-11-07T09:04:32.189Z">
 <meta property="article:author" content="云风子">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://yunfengzi.top/images/avatar.jpg"><script type="application/ld+json"></script><link rel="shortcut icon" href="/img/favicon.ico"><link rel="canonical" href="https://yunfengzi.top/categories/%E5%88%86%E4%BA%AB%E6%94%B6%E8%97%8F/index.html"><link rel="preconnect" href="//unpkg.com"/><link rel="stylesheet" href="/css/index.css?v=5.5.4"><link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@7.1.0/css/all.min.css"><script>
@@ -228,6 +228,17 @@
   background: var(--theme-color, #49b1f5);
   border-color: var(--theme-color, #49b1f5);
   color: #fff;
+}
+.filter-chip.excluded {
+  background: #e74c3c;
+  border-color: #e74c3c;
+  color: #fff;
+}
+.filter-hint {
+  font-size: 12px;
+  color: var(--secondtext, #888);
+  opacity: .85;
+  margin-left: 4px;
 }
 .filter-sep {
   width: 1px;
@@ -540,6 +551,7 @@ const FILTER_FEAT = [
 
 let filterRes = '';
 let filterFeat = [];
+let filterExclude = [];
 let filterItems = [];
 let filterMode = '';
 
@@ -557,6 +569,10 @@ function matchFilter(item) {
     const f = FILTER_FEAT.find(x => x.key === key);
     if (f && !f.re.test(t)) return false;
   }
+  for (const key of filterExclude) {
+    const f = FILTER_FEAT.find(x => x.key === key);
+    if (f && f.re.test(t)) return false;
+  }
   return true;
 }
 
@@ -564,13 +580,18 @@ function filterBarHtml(matched, total) {
   const resChips = FILTER_RES.map(f =>
     `<span class="filter-chip${filterRes === f.key ? ' active' : ''}" data-fk="res" data-k="${f.key}">${f.label}</span>`
   ).join('');
-  const featChips = FILTER_FEAT.map(f =>
-    `<span class="filter-chip${filterFeat.indexOf(f.key) >= 0 ? ' active' : ''}" data-fk="feat" data-k="${f.key}">${f.label}</span>`
-  ).join('');
-  const hasAny = !!filterRes || filterFeat.length > 0;
+  const featChips = FILTER_FEAT.map(f => {
+    const inc = filterFeat.indexOf(f.key) >= 0;
+    const exc = filterExclude.indexOf(f.key) >= 0;
+    const cls = exc ? ' excluded' : (inc ? ' active' : '');
+    const mark = exc ? '✕ ' : (inc ? '✓ ' : '');
+    return `<span class="filter-chip${cls}" data-fk="feat" data-k="${f.key}" title="点击切换：要 → 不要 → 取消">${mark}${f.label}</span>`;
+  }).join('');
+  const hasAny = !!filterRes || filterFeat.length > 0 || filterExclude.length > 0;
   return `<span class="filter-label">筛选</span>${resChips}<span class="filter-sep"></span>${featChips}`
     + `<span class="filter-count">${matched}/${total}</span>`
-    + (hasAny ? '<span class="filter-clear" data-fk="clear">清除</span>' : '');
+    + (hasAny ? '<span class="filter-clear" data-fk="clear">清除</span>' : '')
+    + '<span class="filter-hint">点击特性：要 → 不要 → 取消</span>';
 }
 
 function setFilterItems(items, mode) {
@@ -578,6 +599,7 @@ function setFilterItems(items, mode) {
   filterMode = mode;
   filterRes = '';
   filterFeat = [];
+  filterExclude = [];
   refreshFilter();
 }
 
@@ -586,6 +608,7 @@ function hideFilter() {
   filterMode = '';
   filterRes = '';
   filterFeat = [];
+  filterExclude = [];
   ['magnetFilter', 'btbtFilter'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.hidden = true; el.innerHTML = ''; }
@@ -616,6 +639,7 @@ function handleFilterClick(e) {
   if (clear) {
     filterRes = '';
     filterFeat = [];
+    filterExclude = [];
     refreshFilter();
     return;
   }
@@ -627,8 +651,18 @@ function handleFilterClick(e) {
     filterRes = (filterRes === key) ? '' : key;
   } else if (kind === 'feat') {
     const i = filterFeat.indexOf(key);
-    if (i >= 0) filterFeat.splice(i, 1);
-    else filterFeat.push(key);
+    const j = filterExclude.indexOf(key);
+    if (i >= 0) {
+      // 要 → 不要
+      filterFeat.splice(i, 1);
+      filterExclude.push(key);
+    } else if (j >= 0) {
+      // 不要 → 取消
+      filterExclude.splice(j, 1);
+    } else {
+      // 取消 → 要
+      filterFeat.push(key);
+    }
   }
   refreshFilter();
 }
@@ -1060,4 +1094,4 @@ async function showBtbtDetail(id) {
         </li>
       
     </ul>
-  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-07T08:53:39.332Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
+  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-07T09:05:12.822Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
