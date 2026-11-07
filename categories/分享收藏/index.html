@@ -7,7 +7,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://yunfengzi.top/images/avatar.jpg">
 <meta property="article:published_time" content="2026-03-26T16:00:00.000Z">
-<meta property="article:modified_time" content="2026-11-07T08:48:04.254Z">
+<meta property="article:modified_time" content="2026-11-07T08:53:04.662Z">
 <meta property="article:author" content="云风子">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://yunfengzi.top/images/avatar.jpg"><script type="application/ld+json"></script><link rel="shortcut icon" href="/img/favicon.ico"><link rel="canonical" href="https://yunfengzi.top/categories/%E5%88%86%E4%BA%AB%E6%94%B6%E8%97%8F/index.html"><link rel="preconnect" href="//unpkg.com"/><link rel="stylesheet" href="/css/index.css?v=5.5.4"><link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@7.1.0/css/all.min.css"><script>
@@ -193,6 +193,59 @@
 @media (max-width: 560px) {
   .magnet-search-box { flex-wrap: wrap; }
   .source-select { flex: 1 1 100%; order: 3; }
+}
+
+.magnet-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.magnet-filter[hidden] { display: none; }
+.filter-label {
+  font-size: 13px;
+  color: var(--secondtext, #666);
+  margin-right: 2px;
+}
+.filter-chip {
+  padding: 5px 14px;
+  border: 1px solid var(--card-border, #e3e8f7);
+  border-radius: 16px;
+  font-size: 13px;
+  color: var(--secondtext, #666);
+  background: var(--card-bg, #fff);
+  cursor: pointer;
+  user-select: none;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.filter-chip:hover {
+  border-color: var(--theme-color, #49b1f5);
+  color: var(--theme-color, #49b1f5);
+}
+.filter-chip.active {
+  background: var(--theme-color, #49b1f5);
+  border-color: var(--theme-color, #49b1f5);
+  color: #fff;
+}
+.filter-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--card-border, #e3e8f7);
+  margin: 0 4px;
+}
+.filter-count {
+  font-size: 12px;
+  color: var(--secondtext, #666);
+  margin-left: 4px;
+}
+.filter-clear {
+  font-size: 12px;
+  color: var(--theme-color, #49b1f5);
+  cursor: pointer;
+  text-decoration: underline;
+  margin-left: 6px;
 }
 
 .magnet-status {
@@ -460,6 +513,7 @@
       <button id="magnetSearchBtn" onclick="searchMagnet()">搜索</button>
     </div>
     <div id="magnetStatus" class="magnet-status">输入关键词开始搜索</div>
+    <div id="magnetFilter" class="magnet-filter" hidden></div>
     <div id="magnetResults" class="magnet-results"></div>
     <div id="magnetPager" class="magnet-pager"></div>
   </div>
@@ -470,6 +524,127 @@
 const API_BASE = 'https://api.yunfengzi.top';
 
 let currentKeyword = '';
+
+// ===== 资源筛选 =====
+const FILTER_RES = [
+  { key: '4k', label: '4K', re: /(4K|2160P|UHD)/i },
+  { key: '1080', label: '1080P', re: /1080P/i },
+  { key: '720', label: '720P', re: /720P/i },
+];
+const FILTER_FEAT = [
+  { key: 'hdr', label: 'HDR', re: /HDR/i },
+  { key: 'dv', label: '杜比视界', re: /(杜比视界|DOVI|DOLBY\s*VISION|\bDV\b)/i },
+  { key: 'bd', label: '蓝光', re: /(蓝光|BLU-?RAY|BDRIP|REMUX)/i },
+  { key: 'hc', label: '高码', re: /(高码|HEVC|X265|10BIT)/i },
+];
+
+let filterRes = '';
+let filterFeat = [];
+let filterItems = [];
+let filterMode = '';
+
+function filterText(item) {
+  return (item.title || '') + ' ' + (item.name || '');
+}
+
+function matchFilter(item) {
+  const t = filterText(item);
+  if (filterRes) {
+    const r = FILTER_RES.find(x => x.key === filterRes);
+    if (r && !r.re.test(t)) return false;
+  }
+  for (const key of filterFeat) {
+    const f = FILTER_FEAT.find(x => x.key === key);
+    if (f && !f.re.test(t)) return false;
+  }
+  return true;
+}
+
+function filterBarHtml(matched, total) {
+  const resChips = FILTER_RES.map(f =>
+    `<span class="filter-chip${filterRes === f.key ? ' active' : ''}" data-fk="res" data-k="${f.key}">${f.label}</span>`
+  ).join('');
+  const featChips = FILTER_FEAT.map(f =>
+    `<span class="filter-chip${filterFeat.indexOf(f.key) >= 0 ? ' active' : ''}" data-fk="feat" data-k="${f.key}">${f.label}</span>`
+  ).join('');
+  const hasAny = !!filterRes || filterFeat.length > 0;
+  return `<span class="filter-label">筛选</span>${resChips}<span class="filter-sep"></span>${featChips}`
+    + `<span class="filter-count">${matched}/${total}</span>`
+    + (hasAny ? '<span class="filter-clear" data-fk="clear">清除</span>' : '');
+}
+
+function setFilterItems(items, mode) {
+  filterItems = items || [];
+  filterMode = mode;
+  filterRes = '';
+  filterFeat = [];
+  refreshFilter();
+}
+
+function hideFilter() {
+  filterItems = [];
+  filterMode = '';
+  filterRes = '';
+  filterFeat = [];
+  ['magnetFilter', 'btbtFilter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.hidden = true; el.innerHTML = ''; }
+  });
+}
+
+function refreshFilter() {
+  const barId = filterMode === 'btbt' ? 'btbtFilter' : 'magnetFilter';
+  const bar = document.getElementById(barId);
+  const matched = filterItems.filter(matchFilter);
+
+  if (bar) {
+    if (filterItems.length) {
+      bar.hidden = false;
+      bar.innerHTML = filterBarHtml(matched.length, filterItems.length);
+    } else {
+      bar.hidden = true;
+      bar.innerHTML = '';
+    }
+  }
+
+  if (filterMode === 'btbt') renderBtbtVersionList(matched);
+  else if (filterMode === '1lou') renderResults(matched);
+}
+
+function handleFilterClick(e) {
+  const clear = e.target.closest('.filter-clear');
+  if (clear) {
+    filterRes = '';
+    filterFeat = [];
+    refreshFilter();
+    return;
+  }
+  const chip = e.target.closest('.filter-chip');
+  if (!chip) return;
+  const kind = chip.dataset.fk;
+  const key = chip.dataset.k;
+  if (kind === 'res') {
+    filterRes = (filterRes === key) ? '' : key;
+  } else if (kind === 'feat') {
+    const i = filterFeat.indexOf(key);
+    if (i >= 0) filterFeat.splice(i, 1);
+    else filterFeat.push(key);
+  }
+  refreshFilter();
+}
+
+(function bindFilterEvents() {
+  const mainBar = document.getElementById('magnetFilter');
+  if (mainBar) mainBar.addEventListener('click', handleFilterClick);
+  const detailBox = document.getElementById('magnetDetail');
+  if (detailBox) {
+    detailBox.addEventListener('click', function (e) {
+      if (e.target.closest('.filter-chip') || e.target.closest('.filter-clear')) {
+        handleFilterClick(e);
+      }
+    });
+  }
+})();
 
 function currentSource() {
   const el = document.getElementById('magnetSource');
@@ -482,6 +657,7 @@ function onSourceChange() {
   document.getElementById('magnetPager').innerHTML = '';
   document.getElementById('magnetDetail').className = 'magnet-detail';
   document.getElementById('magnetSearchSection').style.display = 'block';
+  hideFilter();
   document.getElementById('magnetStatus').textContent = src === 'btbt'
     ? '已切换到 BT影视：按影片聚合多版本，响应较慢'
     : '已切换到 BT之家：帖子资源，支持翻页';
@@ -532,7 +708,7 @@ async function searchMagnet(page) {
     }
 
     status.textContent = `找到 ${data.total} 条资源，当前第 ${data.page} 页`;
-    renderResults(data.items);
+    setFilterItems(data.items, '1lou');
     renderPager(data);
   } catch (e) {
     status.textContent = '搜索失败，请检查网络后重试';
@@ -724,6 +900,7 @@ async function searchBtbt() {
     }
 
     status.textContent = `BT影视找到 ${data.total} 部影片，点选查看各版本磁力`;
+    hideFilter();
     renderBtbtResults(data.items);
   } catch (e) {
     status.textContent = '搜索失败，请检查网络后重试';
@@ -749,6 +926,29 @@ function renderBtbtResults(items) {
           ${item.class ? `<span>🏷 ${escapeHtml(item.class)}</span>` : ''}
         </div>
         ${item.desc ? `<div class="magnet-card-desc">${escapeHtml(item.desc)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderBtbtVersionList(items) {
+  const box = document.getElementById('btbtList');
+  if (!box) return;
+  if (!items.length) {
+    box.innerHTML = '<div class="magnet-status" style="color:var(--secondtext,#666)">没有符合筛选条件的版本</div>';
+    return;
+  }
+  box.innerHTML = items.map(item => {
+    const name = escapeHtml(item.name || '未命名');
+    const magnet = escapeHtml(item.magnet || '');
+    return `<div class="magnet-item">
+      <div class="magnet-item-info">
+        <div class="magnet-item-name" title="${name}">${name}</div>
+        <div class="magnet-item-size">📦 ${escapeHtml(item.sizeText || '未知大小')}</div>
+      </div>
+      <div class="magnet-item-actions">
+        <button class="btn-copy" data-magnet="${magnet}" onclick="copyMagnet(this, this.dataset.magnet)">复制磁力</button>
+        <a class="btn-open" href="${magnet}">打开</a>
       </div>
     </div>`;
   }).join('');
@@ -792,23 +992,11 @@ async function showBtbtDetail(id) {
           <div style="font-size:13px;color:var(--secondtext,#666)">共 ${data.total} 个版本，已解析 ${data.count} 个</div>
         </div>
       </div>`;
-    html += '<div class="magnet-group"><div class="magnet-group-title">🧲 磁力链接</div>';
-    for (const item of data.items) {
-      const name = escapeHtml(item.name || '未命名');
-      const magnet = escapeHtml(item.magnet || '');
-      html += `<div class="magnet-item">
-        <div class="magnet-item-info">
-          <div class="magnet-item-name" title="${name}">${name}</div>
-          <div class="magnet-item-size">📦 ${escapeHtml(item.sizeText || '未知大小')}</div>
-        </div>
-        <div class="magnet-item-actions">
-          <button class="btn-copy" data-magnet="${magnet}" onclick="copyMagnet(this, this.dataset.magnet)">复制磁力</button>
-          <a class="btn-open" href="${magnet}">打开</a>
-        </div>
-      </div>`;
-    }
-    html += '</div></div>';
+    html += '<div id="btbtFilter" class="magnet-filter" hidden></div>';
+    html += '<div class="magnet-group"><div class="magnet-group-title">🧲 磁力链接</div><div id="btbtList"></div></div>';
+    html += '</div>';
     detail.innerHTML = html;
+    setFilterItems(data.items, 'btbt');
   } catch (e) {
     detail.innerHTML = `<div class="magnet-detail-inner">
       <div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>
@@ -872,4 +1060,4 @@ async function showBtbtDetail(id) {
         </li>
       
     </ul>
-  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-07T08:48:44.071Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
+  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-07T08:53:39.332Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
