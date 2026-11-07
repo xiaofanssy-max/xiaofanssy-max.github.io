@@ -7,7 +7,7 @@
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://yunfengzi.top/images/avatar.jpg">
 <meta property="article:published_time" content="2026-03-26T16:00:00.000Z">
-<meta property="article:modified_time" content="2026-11-07T08:38:29.297Z">
+<meta property="article:modified_time" content="2026-11-07T08:48:04.254Z">
 <meta property="article:author" content="云风子">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://yunfengzi.top/images/avatar.jpg"><script type="application/ld+json"></script><link rel="shortcut icon" href="/img/favicon.ico"><link rel="canonical" href="https://yunfengzi.top/categories/%E5%88%86%E4%BA%AB%E6%94%B6%E8%97%8F/index.html"><link rel="preconnect" href="//unpkg.com"/><link rel="stylesheet" href="/css/index.css?v=5.5.4"><link rel="stylesheet" href="https://unpkg.com/@fortawesome/fontawesome-free@7.1.0/css/all.min.css"><script>
@@ -180,6 +180,20 @@
 }
 .magnet-search-box button:hover { opacity: .85; }
 .magnet-search-box button:disabled { opacity: .5; cursor: not-allowed; }
+.source-select {
+  padding: 12px 10px;
+  border: 2px solid var(--theme-color, #49b1f5);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--card-bg, #fff);
+  color: var(--font-color, #333);
+  cursor: pointer;
+  outline: none;
+}
+@media (max-width: 560px) {
+  .magnet-search-box { flex-wrap: wrap; }
+  .source-select { flex: 1 1 100%; order: 3; }
+}
 
 .magnet-status {
   text-align: center;
@@ -439,6 +453,10 @@
   <div id="magnetSearchSection">
     <div class="magnet-search-box">
       <input type="text" id="magnetKeyword" onkeydown="if(event.key==='Enter')searchMagnet()">
+      <select id="magnetSource" class="source-select" onchange="onSourceChange()">
+        <option value="1lou">BT之家 · 帖子资源</option>
+        <option value="btbt">BT影视 · 多版本</option>
+      </select>
       <button id="magnetSearchBtn" onclick="searchMagnet()">搜索</button>
     </div>
     <div id="magnetStatus" class="magnet-status">输入关键词开始搜索</div>
@@ -453,9 +471,27 @@ const API_BASE = 'https://api.yunfengzi.top';
 
 let currentKeyword = '';
 
+function currentSource() {
+  const el = document.getElementById('magnetSource');
+  return el ? el.value : '1lou';
+}
+
+function onSourceChange() {
+  const src = currentSource();
+  document.getElementById('magnetResults').innerHTML = '';
+  document.getElementById('magnetPager').innerHTML = '';
+  document.getElementById('magnetDetail').className = 'magnet-detail';
+  document.getElementById('magnetSearchSection').style.display = 'block';
+  document.getElementById('magnetStatus').textContent = src === 'btbt'
+    ? '已切换到 BT影视：按影片聚合多版本，响应较慢'
+    : '已切换到 BT之家：帖子资源，支持翻页';
+  document.getElementById('magnetKeyword').focus();
+}
+
 async function searchMagnet(page) {
   const kw = document.getElementById('magnetKeyword').value.trim();
   if (!kw) return;
+  if (currentSource() === 'btbt') return searchBtbt();
 
   const btn = document.getElementById('magnetSearchBtn');
   const status = document.getElementById('magnetStatus');
@@ -647,6 +683,140 @@ function copyMagnet(btn, magnet) {
     }, 2000);
   });
 }
+
+// ============ 资源站：BT影视（btbtlb）============
+
+async function searchBtbt() {
+  const kw = document.getElementById('magnetKeyword').value.trim();
+  const btn = document.getElementById('magnetSearchBtn');
+  const status = document.getElementById('magnetStatus');
+  const results = document.getElementById('magnetResults');
+  const pager = document.getElementById('magnetPager');
+
+  currentKeyword = kw;
+  btn.disabled = true;
+  btn.textContent = '搜索中...';
+  status.innerHTML = '<div class="spinner"></div> 正在搜索 BT影视（该站较慢，可能需要 10 秒）';
+  results.innerHTML = '';
+  if (pager) pager.innerHTML = '';
+  document.getElementById('magnetDetail').className = 'magnet-detail';
+  document.getElementById('magnetSearchSection').style.display = 'block';
+
+  try {
+    const resp = await fetch(`${API_BASE}/bt/btbt-search?q=${encodeURIComponent(kw)}`, {
+      signal: AbortSignal.timeout(45000),
+    });
+    const data = await resp.json();
+
+    if (!data || typeof data.ok === 'undefined') {
+      status.textContent = '资源接口尚未更新，请稍后再试';
+      return;
+    }
+    if (!data.ok) {
+      status.textContent = data.limited
+        ? '资源站正在限流，请过 1-2 分钟再试'
+        : '搜索失败：' + (data.error || '接口异常');
+      return;
+    }
+    if (!data.items || !data.items.length) {
+      status.textContent = 'BT影视没有匹配的影片，换个关键词试试';
+      return;
+    }
+
+    status.textContent = `BT影视找到 ${data.total} 部影片，点选查看各版本磁力`;
+    renderBtbtResults(data.items);
+  } catch (e) {
+    status.textContent = '搜索失败，请检查网络后重试';
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '搜索';
+  }
+}
+
+function renderBtbtResults(items) {
+  const container = document.getElementById('magnetResults');
+  container.innerHTML = items.map(item => {
+    const title = escapeHtml(item.title);
+    const cover = item.cover
+      ? `<img class="magnet-card-img" src="${escapeHtml(item.cover)}" alt="${title}" loading="lazy" onerror="this.style.display='none'">`
+      : '<div class="magnet-card-icon">🎬</div>';
+    return `<div class="magnet-card" onclick="showBtbtDetail(${item.id})">
+      ${cover}
+      <div class="magnet-card-info">
+        <div class="magnet-card-title">${title}</div>
+        <div class="magnet-card-meta">
+          ${item.class ? `<span>🏷 ${escapeHtml(item.class)}</span>` : ''}
+        </div>
+        ${item.desc ? `<div class="magnet-card-desc">${escapeHtml(item.desc)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function showBtbtDetail(id) {
+  const searchSection = document.getElementById('magnetSearchSection');
+  const detail = document.getElementById('magnetDetail');
+
+  searchSection.style.display = 'none';
+  detail.className = 'magnet-detail show';
+  detail.innerHTML = '<div class="magnet-detail-inner"><div class="magnet-status"><div class="spinner"></div> 正在解析各版本磁力（可能需要 10-20 秒）</div></div>';
+
+  try {
+    const resp = await fetch(`${API_BASE}/bt/btbt-links?id=${encodeURIComponent(id)}&limit=10`, {
+      signal: AbortSignal.timeout(60000),
+    });
+    const data = await resp.json();
+
+    const head = '<div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>';
+
+    if (!data.ok) {
+      detail.innerHTML = `<div class="magnet-detail-inner">${head}
+        <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.error || '获取失败')}</div>
+      </div>`;
+      return;
+    }
+
+    if (!data.items || !data.items.length) {
+      detail.innerHTML = `<div class="magnet-detail-inner">${head}
+        <div class="magnet-detail-header"><div><h3 style="margin:0 0 8px">${escapeHtml(data.title || '')}</h3></div></div>
+        <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.message || '该影片暂无资源')}</div>
+      </div>`;
+      return;
+    }
+
+    let html = `<div class="magnet-detail-inner">${head}
+      <div class="magnet-detail-header">
+        <div>
+          <h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3>
+          <div style="font-size:13px;color:var(--secondtext,#666)">共 ${data.total} 个版本，已解析 ${data.count} 个</div>
+        </div>
+      </div>`;
+    html += '<div class="magnet-group"><div class="magnet-group-title">🧲 磁力链接</div>';
+    for (const item of data.items) {
+      const name = escapeHtml(item.name || '未命名');
+      const magnet = escapeHtml(item.magnet || '');
+      html += `<div class="magnet-item">
+        <div class="magnet-item-info">
+          <div class="magnet-item-name" title="${name}">${name}</div>
+          <div class="magnet-item-size">📦 ${escapeHtml(item.sizeText || '未知大小')}</div>
+        </div>
+        <div class="magnet-item-actions">
+          <button class="btn-copy" data-magnet="${magnet}" onclick="copyMagnet(this, this.dataset.magnet)">复制磁力</button>
+          <a class="btn-open" href="${magnet}">打开</a>
+        </div>
+      </div>`;
+    }
+    html += '</div></div>';
+    detail.innerHTML = html;
+  } catch (e) {
+    detail.innerHTML = `<div class="magnet-detail-inner">
+      <div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>
+      <div class="magnet-status" style="color:var(--secondtext,#666)">解析失败，请稍后重试</div>
+    </div>`;
+    console.error(e);
+  }
+}
 </script></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/images/avatar.jpg" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">云风子</div><div class="author-info-description">专注技术成长与记录</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">12</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">22</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">5</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/"><i class="fab fa-github"></i><span>关注我</span></a></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>公告</span></div><div class="announcement_content">欢迎来到我的博客</div></div><div class="sticky_layout"><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/09/11/2026-09-11-DNF86%E7%BA%A7ServerS4A21%E4%BA%91%E6%9C%8D%E5%8A%A1%E5%99%A8%E9%83%A8%E7%BD%B2/" title="DNF 86级端 ServerS4A21 云服务器部署全流程：.NET 10 服务端从零编译到联机">DNF 86级端 ServerS4A21 云服务器部署全流程：.NET 10 服务端从零编译到联机</a><time datetime="2026-09-11T04:00:00.000Z" title="发表于 2026-09-11 12:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/09/08/2026-09-08-DNF%E7%A7%81%E6%9C%8DDocker%E6%90%AD%E5%BB%BA/" title="DNF 85级端 Docker 私服搭建全流程：从虚拟机到局域网跑通">DNF 85级端 Docker 私服搭建全流程：从虚拟机到局域网跑通</a><time datetime="2026-09-08T04:00:00.000Z" title="发表于 2026-09-08 12:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/08/02/2026-08-02-Electron%E8%82%A1%E7%A5%A8%E5%B0%8F%E7%BB%84%E4%BB%B6%E5%AE%9E%E6%88%98/" title="用 Electron 从零做一个桌面股票行情小组件：实时行情、迷你K线、一键打包 exe">用 Electron 从零做一个桌面股票行情小组件：实时行情、迷你K线、一键打包 exe</a><time datetime="2026-08-02T06:00:00.000Z" title="发表于 2026-08-02 14:00:00">2026-08-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/05/24/2026-05-24-Crush%E6%8C%87%E5%8D%97/" title="Crush 终端 AI 助手使用指南：开源免费的多模型编程搭档">Crush 终端 AI 助手使用指南：开源免费的多模型编程搭档</a><time datetime="2026-05-24T06:00:00.000Z" title="发表于 2026-05-24 14:00:00">2026-05-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/05/24/2026-05-24-Codex-CLI%E6%8C%87%E5%8D%97/" title="OpenAI Codex CLI 使用教程：ChatGPT 终端编程助手完全指南">OpenAI Codex CLI 使用教程：ChatGPT 终端编程助手完全指南</a><time datetime="2026-05-24T05:00:00.000Z" title="发表于 2026-05-24 13:00:00">2026-05-24</time></div></div></div></div><div class="card-widget card-archives">
     <div class="item-headline">
       <i class="fas fa-archive"></i>
@@ -702,4 +872,4 @@ function copyMagnet(btn, magnet) {
         </li>
       
     </ul>
-  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-07T08:39:04.818Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
+  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-07T08:48:44.071Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
