@@ -623,7 +623,6 @@
 const API_BASE = 'https://api.yunfengzi.top';
 
 let currentKeyword = '';
-let lastData = null;
 let postSort = 'default';
 let verSort = 'default';
 const searchCache = new Map();   // 关键词|页码 → 搜索结果（同一次浏览内秒回）
@@ -820,41 +819,84 @@ async function fetchJson(url, ms) {
   }
 }
 
-/** 一次请求拿两站结果；新接口不可用时自动降级为分别请求 */
-async function loadSearch(kw, page) {
-  const key = kw + '|' + page;
-  if (searchCache.has(key)) return searchCache.get(key);
+/** 两个来源各自请求、各自渲染：谁先回来先显示，不再互相拖慢 */
+let searchState = { posts: null, postsError: '', movies: null, moviesError: '' };
 
-  const data = await fetchJson(`${API_BASE}/bt/search-all?q=${encodeURIComponent(kw)}&page=${page}`, 32000);
-  if (data && data.ok && (data.posts || data.movies)) {
-    searchCache.set(key, data);
-    return data;
+async function loadPosts(kw, page) {
+  const key = 'p|' + kw + '|' + page;
+  let d = searchCache.get(key);
+  if (!d) {
+    d = await fetchJson(`${API_BASE}/bt/search?q=${encodeURIComponent(kw)}&page=${page}`, 30000);
+    if (d && d.ok) searchCache.set(key, d);
   }
-  // Worker 还是旧版（没有新路由）或真实报错才走降级
-  if (data && data.ok === false && data.error && data.error !== 'Not Found') {
-    return data;
+  const empty = { items: [], total: 0, page: page, pageSize: 50 };
+  if (!d || typeof d.ok === 'undefined') {
+    searchState.posts = empty;
+    searchState.postsError = '资源帖接口无响应';
+  } else if (!d.ok) {
+    searchState.posts = empty;
+    searchState.postsError = d.limited ? '资源站限流中，请过 1-2 分钟再试' : (d.error || '搜索失败');
+  } else {
+    searchState.posts = {
+      items: d.items || [],
+      total: d.total || 0,
+      page: d.page || page,
+      pageSize: d.pageSize || 50,
+    };
+  }
+  renderPostSection();
+  updateSearchStatus();
+}
+
+async function loadMovies(kw) {
+  const key = 'm|' + kw;
+  let d = searchCache.get(key);
+  if (!d) {
+    d = await fetchJson(`${API_BASE}/bt/btbt-search?q=${encodeURIComponent(kw)}`, 30000);
+    if (d && d.ok) searchCache.set(key, d);
+  }
+  if (!d || typeof d.ok === 'undefined') {
+    searchState.movies = [];
+    searchState.moviesError = '影片库接口无响应';
+  } else if (!d.ok) {
+    searchState.movies = [];
+    searchState.moviesError = d.limited ? '资源站限流中，请过 1-2 分钟再试' : (d.error || '搜索失败');
+  } else {
+    searchState.movies = d.items || [];
+  }
+  renderMovieSection();
+  updateSearchStatus();
+}
+
+function updateSearchStatus() {
+  const el = document.getElementById('magnetStatus');
+  if (!el) return;
+  const s = searchState;
+  const ready = s.posts !== null && s.movies !== null;
+
+  const notices = [];
+  if (s.moviesError) notices.push('影片库（BT影视）：' + s.moviesError);
+  if (s.postsError) notices.push('资源帖（BT之家）：' + s.postsError);
+  const channels = document.getElementById('magnetChannels');
+  if (channels) {
+    channels.innerHTML = notices.length
+      ? `<div class="notice">${notices.map(escapeHtml).join('<br>')}</div>`
+      : '';
   }
 
-  // 降级：分别请求两个老接口
-  const res = await Promise.all([
-    fetchJson(`${API_BASE}/bt/search?q=${encodeURIComponent(kw)}&page=${page}`, 32000),
-    fetchJson(`${API_BASE}/bt/btbt-search?q=${encodeURIComponent(kw)}`, 32000),
-  ]);
-  const p = res[0] || { ok: false, error: '资源帖接口不可用' };
-  const b = res[1] || { ok: false, error: '影片库接口不可用' };
-  const merged = {
-    ok: true,
-    q: kw,
-    page: p.ok ? (p.page || page) : page,
-    postTotal: p.ok ? (p.total || 0) : 0,
-    postPageSize: p.ok ? (p.pageSize || 0) : 0,
-    posts: p.ok ? (p.items || []) : [],
-    postsError: p.ok ? '' : (p.error || '资源站暂不可用'),
-    movies: b.ok ? (b.items || []) : [],
-    moviesError: b.ok ? '' : (b.error || '影片库暂不可用'),
-  };
-  if (merged.posts.length || merged.movies.length) searchCache.set(key, merged);
-  return merged;
+  const parts = [];
+  if (s.movies && s.movies.length) parts.push(`影片 ${s.movies.length} 部`);
+  if (s.posts && s.posts.items.length) parts.push(`资源帖 ${s.posts.total || s.posts.items.length} 条`);
+
+  if (parts.length) {
+    el.textContent = (ready ? '找到 ' : '已找到 ') + parts.join(' · ') + (ready ? '，点卡片查看磁力' : '…');
+  } else if (ready) {
+    el.textContent = (s.postsError || s.moviesError)
+      ? ('搜索失败：' + (s.postsError || s.moviesError))
+      : '未找到相关资源，换个关键词试试';
+  } else {
+    el.innerHTML = '<div class="spinner"></div> 正在搜索…';
+  }
 }
 
 async function searchMagnet(page) {
@@ -863,56 +905,32 @@ async function searchMagnet(page) {
     document.getElementById('magnetKeyword').focus();
     return;
   }
-
   const btn = document.getElementById('magnetSearchBtn');
-  const status = document.getElementById('magnetStatus');
   const pageNo = page || 1;
-
   currentKeyword = kw;
+
   btn.disabled = true;
   btn.textContent = '搜索中';
   document.getElementById('magnetChannels').innerHTML = '';
   document.getElementById('movieSectionWrap').hidden = true;
+  document.getElementById('movieSectionWrap').innerHTML = '';
   document.getElementById('postSectionWrap').hidden = true;
+  document.getElementById('postList').innerHTML = '';
   document.getElementById('magnetPager').innerHTML = '';
   document.getElementById('magnetDetail').className = 'magnet-detail';
   document.getElementById('magnetSearchSection').style.display = 'block';
   hideFilter();
-  status.innerHTML = '<div class="spinner"></div> 正在同时搜索影片库与资源帖…';
+
+  searchState = { posts: null, postsError: '', movies: null, moviesError: '' };
+  updateSearchStatus();
 
   try {
-    const data = await loadSearch(kw, pageNo);
-
-    if (!data || typeof data.ok === 'undefined') {
-      status.textContent = '接口返回格式异常，请稍后重试';
-      return;
-    }
-    if (!data.ok) {
-      status.textContent = data.limited
-        ? '资源站正在限流，请过 1-2 分钟再试'
-        : '搜索失败：' + (data.error || '接口异常');
-      return;
-    }
-
-    const hasPosts = !!(data.posts && data.posts.length);
-    const hasMovies = !!(data.movies && data.movies.length);
-    if (!hasPosts && !hasMovies) {
-      status.textContent = (data.postsError || data.moviesError)
-        ? ('搜索失败：' + (data.postsError || data.moviesError))
-        : '未找到相关资源，换个关键词试试';
-      return;
-    }
-
-    const parts = [];
-    if (hasMovies) parts.push(`影片 ${data.movies.length} 部`);
-    if (data.postTotal) parts.push(`资源帖 ${data.postTotal} 条`);
-    status.textContent = '找到 ' + parts.join(' · ') + '，点卡片查看磁力';
-
-    renderResults(data);
+    // 两站并行、互不等待：资源帖先到就先看
+    await Promise.all([loadPosts(kw, pageNo), loadMovies(kw)]);
   } catch (e) {
-    status.textContent = '搜索失败，请检查网络后重试';
     console.error(e);
   } finally {
+    updateSearchStatus();
     btn.disabled = false;
     btn.textContent = '搜索';
   }
@@ -957,44 +975,38 @@ function badgeHtml(item) {
   return html;
 }
 
-/** 渲染整页结果：影片（多版本） + 资源帖 */
-function renderResults(data) {
-  lastData = data;
-
-  const notices = [];
-  if (data.moviesError) notices.push('影片库（BT影视）暂不可用：' + data.moviesError);
-  if (data.postsError) notices.push('资源帖（BT之家）暂不可用：' + data.postsError);
-  const channels = document.getElementById('magnetChannels');
-  channels.innerHTML = notices.length
-    ? `<div class="notice">${notices.map(escapeHtml).join('<br>')}</div>`
-    : '';
-
-  // ---- 影片（点进去看多版本） ----
-  const movieWrap = document.getElementById('movieSectionWrap');
-  if (data.movies && data.movies.length) {
-    movieWrap.hidden = false;
-    movieWrap.innerHTML = `<div class="result-section">
-      <div class="section-title">🎬 影片 · 多版本<span class="section-sub">共 ${data.movies.length} 部，点开看全部磁力版本</span></div>
-      <div class="movie-grid">${data.movies.map(movieCardHtml).join('')}</div>
-    </div>`;
-  } else {
-    movieWrap.hidden = true;
-    movieWrap.innerHTML = '';
+/** 影片分区（谁先到谁先渲染） */
+function renderMovieSection() {
+  const wrap = document.getElementById('movieSectionWrap');
+  if (!wrap) return;
+  const movies = searchState.movies || [];
+  if (!movies.length) {
+    wrap.hidden = true;
+    wrap.innerHTML = '';
+    return;
   }
+  wrap.hidden = false;
+  wrap.innerHTML = `<div class="result-section">
+    <div class="section-title">🎬 影片 · 多版本<span class="section-sub">共 ${movies.length} 部，点开看全部磁力版本</span></div>
+    <div class="movie-grid">${movies.map(movieCardHtml).join('')}</div>
+  </div>`;
+}
 
-  // ---- 资源帖 ----
-  const postWrap = document.getElementById('postSectionWrap');
-  if (data.posts && data.posts.length) {
-    postWrap.hidden = false;
-    const hint = document.getElementById('postCountHint');
-    if (hint) hint.textContent = data.postTotal ? `共 ${data.postTotal} 条` : '';
-    setFilterItems(data.posts, '1lou');
-    renderPager(data);
-  } else {
-    postWrap.hidden = true;
-    hideFilter();
+/** 资源帖分区 */
+function renderPostSection() {
+  const wrap = document.getElementById('postSectionWrap');
+  const posts = searchState.posts;
+  if (!wrap) return;
+  if (!posts || !posts.items.length) {
+    wrap.hidden = true;
     document.getElementById('magnetPager').innerHTML = '';
+    return;
   }
+  wrap.hidden = false;
+  const hint = document.getElementById('postCountHint');
+  if (hint) hint.textContent = posts.total ? `共 ${posts.total} 条` : '';
+  setFilterItems(posts.items, '1lou');
+  renderPager(posts);
 }
 
 function movieCardHtml(item) {
@@ -1395,4 +1407,4 @@ async function showMovieDetail(id) {
         </li>
       
     </ul>
-  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-09T12:23:45.683Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
+  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-09T12:30:37.604Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
