@@ -511,6 +511,71 @@
 }
 .btn-open:hover { background: var(--theme-color, #49b1f5); color: #fff; }
 
+/* 结果分区 / 影片网格 / 清晰度徽章 */
+.result-section { margin-bottom: 22px; }
+.result-section[hidden] { display: none; }
+.section-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--font-color, #333);
+  margin: 0 0 10px;
+}
+.section-sub { font-size: 12px; font-weight: 400; color: var(--secondtext, #888); }
+.movie-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.movie-grid .magnet-card { padding: 12px; gap: 12px; }
+.movie-grid .magnet-card-img { width: 76px; min-height: 108px; }
+@media (max-width: 560px) {
+  .movie-grid { grid-template-columns: 1fr; }
+  .movie-grid .magnet-card-img { width: 64px; min-height: 92px; }
+}
+.q-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  margin-right: 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  vertical-align: 1px;
+  background: rgba(73,177,245,.14);
+  color: var(--theme-color, #49b1f5);
+  border: 1px solid rgba(73,177,245,.3);
+}
+.q-badge.q-4k { background: #e74c3c; border-color: #e74c3c; color: #fff; }
+.q-badge.q-1080 { background: #2980b9; border-color: #2980b9; color: #fff; }
+.q-badge.q-720 { background: #8e44ad; border-color: #8e44ad; color: #fff; }
+.q-badge.q-480 { background: #7f8c8d; border-color: #7f8c8d; color: #fff; }
+.notice {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #b9770e;
+  background: rgba(230,126,34,.1);
+  border: 1px solid rgba(230,126,34,.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.mini-select {
+  padding: 4px 8px;
+  border: 1px solid var(--card-border, #e3e8f7);
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--card-bg, #fff);
+  color: var(--font-color, #333);
+  cursor: pointer;
+}
+.magnet-item-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.btn-copy[disabled] { opacity: .6; cursor: progress; }
+.btn-copy.retry { border-color: #e67e22; color: #e67e22; }
+
 /* 加载动画 */
 .spinner {
   display: inline-block;
@@ -527,16 +592,28 @@
 <div class="magnet-container">
   <div id="magnetSearchSection">
     <div class="magnet-search-box">
-      <input type="text" id="magnetKeyword" onkeydown="if(event.key==='Enter')searchMagnet()">
-      <select id="magnetSource" class="source-select" onchange="onSourceChange()">
-        <option value="1lou">BT之家 · 帖子资源</option>
-        <option value="btbt">BT影视 · 多版本</option>
-      </select>
+      <input type="text" id="magnetKeyword" placeholder="输入片名，如：流浪地球 / 庆余年" onkeydown="if(event.key==='Enter')searchMagnet()">
       <button id="magnetSearchBtn" onclick="searchMagnet()">搜索</button>
     </div>
-    <div id="magnetStatus" class="magnet-status">输入关键词开始搜索</div>
-    <div id="magnetFilter" class="magnet-filter" hidden></div>
-    <div id="magnetResults" class="magnet-results"></div>
+    <div id="magnetStatus" class="magnet-status">输入片名开始搜索</div>
+    <div id="magnetChannels"></div>
+    <div id="movieSectionWrap" hidden></div>
+    <div id="postSectionWrap" hidden>
+      <div class="section-title">
+        <span>📄 资源帖</span>
+        <span class="section-sub" id="postCountHint"></span>
+        <span style="margin-left:auto">
+          <select id="postSort" class="mini-select" onchange="onPostSortChange()">
+            <option value="default">默认排序</option>
+            <option value="res">清晰度优先</option>
+            <option value="size">体积从大到小</option>
+            <option value="date">最新发布</option>
+          </select>
+        </span>
+      </div>
+      <div id="magnetFilter" class="magnet-filter" hidden></div>
+      <div id="postList" class="magnet-results"></div>
+    </div>
     <div id="magnetPager" class="magnet-pager"></div>
   </div>
   <div id="magnetDetail" class="magnet-detail"></div>
@@ -546,6 +623,11 @@
 const API_BASE = 'https://api.yunfengzi.top';
 
 let currentKeyword = '';
+let lastData = null;
+let postSort = 'default';
+let verSort = 'default';
+const searchCache = new Map();   // 关键词|页码 → 搜索结果（同一次浏览内秒回）
+const versionCache = new Map();  // 影片 id → 版本清单
 
 // ===== 资源筛选 =====
 const FILTER_RES = [
@@ -629,7 +711,7 @@ function hideFilter() {
 function refreshFilter() {
   const barId = filterMode === 'btbt' ? 'btbtFilter' : 'magnetFilter';
   const bar = document.getElementById(barId);
-  const matched = filterItems.filter(matchFilter);
+  const matched = sortItems(filterItems.filter(matchFilter));
 
   if (bar) {
     if (filterItems.length) {
@@ -641,8 +723,46 @@ function refreshFilter() {
     }
   }
 
-  if (filterMode === 'btbt') renderBtbtVersionList(matched);
-  else if (filterMode === '1lou') renderResults(matched);
+  if (filterMode === 'btbt') {
+    renderVersionList(matched);
+    observeRows();
+  } else if (filterMode === '1lou') {
+    renderPostList(matched);
+  }
+}
+
+/** 统一排序（影片版本 / 资源帖） */
+function sortItems(items) {
+  const arr = items.slice();
+  if (filterMode === 'btbt') {
+    if (verSort === 'size') {
+      arr.sort((a, b) => (b.sizeBytes || 0) - (a.sizeBytes || 0));
+    } else if (verSort === 'sizeAsc') {
+      arr.sort((a, b) => (a.sizeBytes || 0) - (b.sizeBytes || 0));
+    } else if (verSort === 'ep') {
+      arr.sort((a, b) => (a.ep || 0) - (b.ep || 0) || (b.resRank || 0) - (a.resRank || 0));
+    } else {
+      // 默认：清晰度高 → 集数小 → 体积大
+      arr.sort((a, b) => (b.resRank || 0) - (a.resRank || 0)
+        || (a.ep || 0) - (b.ep || 0)
+        || (b.sizeBytes || 0) - (a.sizeBytes || 0));
+    }
+  } else {
+    if (postSort === 'res') {
+      arr.sort((a, b) => (b.resRank || 0) - (a.resRank || 0) || (b.sizeBytes || 0) - (a.sizeBytes || 0));
+    } else if (postSort === 'size') {
+      arr.sort((a, b) => (b.sizeBytes || 0) - (a.sizeBytes || 0));
+    } else if (postSort === 'date') {
+      arr.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    }
+  }
+  return arr;
+}
+
+function onPostSortChange() {
+  const el = document.getElementById('postSort');
+  postSort = el ? el.value : 'default';
+  refreshFilter();
 }
 
 function handleFilterClick(e) {
@@ -691,51 +811,77 @@ function handleFilterClick(e) {
   }
 })();
 
-function currentSource() {
-  const el = document.getElementById('magnetSource');
-  return el ? el.value : '1lou';
+async function fetchJson(url, ms) {
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(ms || 40000) });
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
 }
 
-function onSourceChange() {
-  const src = currentSource();
-  document.getElementById('magnetResults').innerHTML = '';
-  document.getElementById('magnetPager').innerHTML = '';
-  document.getElementById('magnetDetail').className = 'magnet-detail';
-  document.getElementById('magnetSearchSection').style.display = 'block';
-  hideFilter();
-  document.getElementById('magnetStatus').textContent = src === 'btbt'
-    ? '已切换到 BT影视：按影片聚合多版本，响应较慢'
-    : '已切换到 BT之家：帖子资源，支持翻页';
-  document.getElementById('magnetKeyword').focus();
+/** 一次请求拿两站结果；新接口不可用时自动降级为分别请求 */
+async function loadSearch(kw, page) {
+  const key = kw + '|' + page;
+  if (searchCache.has(key)) return searchCache.get(key);
+
+  const data = await fetchJson(`${API_BASE}/bt/search-all?q=${encodeURIComponent(kw)}&page=${page}`, 32000);
+  if (data && data.ok && (data.posts || data.movies)) {
+    searchCache.set(key, data);
+    return data;
+  }
+  // Worker 还是旧版（没有新路由）或真实报错才走降级
+  if (data && data.ok === false && data.error && data.error !== 'Not Found') {
+    return data;
+  }
+
+  // 降级：分别请求两个老接口
+  const res = await Promise.all([
+    fetchJson(`${API_BASE}/bt/search?q=${encodeURIComponent(kw)}&page=${page}`, 32000),
+    fetchJson(`${API_BASE}/bt/btbt-search?q=${encodeURIComponent(kw)}`, 32000),
+  ]);
+  const p = res[0] || { ok: false, error: '资源帖接口不可用' };
+  const b = res[1] || { ok: false, error: '影片库接口不可用' };
+  const merged = {
+    ok: true,
+    q: kw,
+    page: p.ok ? (p.page || page) : page,
+    postTotal: p.ok ? (p.total || 0) : 0,
+    postPageSize: p.ok ? (p.pageSize || 0) : 0,
+    posts: p.ok ? (p.items || []) : [],
+    postsError: p.ok ? '' : (p.error || '资源站暂不可用'),
+    movies: b.ok ? (b.items || []) : [],
+    moviesError: b.ok ? '' : (b.error || '影片库暂不可用'),
+  };
+  if (merged.posts.length || merged.movies.length) searchCache.set(key, merged);
+  return merged;
 }
 
 async function searchMagnet(page) {
   const kw = document.getElementById('magnetKeyword').value.trim();
-  if (!kw) return;
-  if (currentSource() === 'btbt') return searchBtbt();
+  if (!kw) {
+    document.getElementById('magnetKeyword').focus();
+    return;
+  }
 
   const btn = document.getElementById('magnetSearchBtn');
   const status = document.getElementById('magnetStatus');
-  const results = document.getElementById('magnetResults');
-  const pager = document.getElementById('magnetPager');
-
   const pageNo = page || 1;
-  currentKeyword = kw;
 
+  currentKeyword = kw;
   btn.disabled = true;
-  btn.textContent = '搜索中...';
-  status.innerHTML = '<div class="spinner"></div> 搜索中...（资源站响应较慢时可能需要十几秒）';
-  results.innerHTML = '';
-  if (pager) pager.innerHTML = '';
+  btn.textContent = '搜索中';
+  document.getElementById('magnetChannels').innerHTML = '';
+  document.getElementById('movieSectionWrap').hidden = true;
+  document.getElementById('postSectionWrap').hidden = true;
+  document.getElementById('magnetPager').innerHTML = '';
   document.getElementById('magnetDetail').className = 'magnet-detail';
   document.getElementById('magnetSearchSection').style.display = 'block';
+  hideFilter();
+  status.innerHTML = '<div class="spinner"></div> 正在同时搜索影片库与资源帖…';
 
   try {
-    const resp = await fetch(
-      `${API_BASE}/bt/search?q=${encodeURIComponent(kw)}&page=${pageNo}`,
-      { signal: AbortSignal.timeout(32000) }
-    );
-    const data = await resp.json();
+    const data = await loadSearch(kw, pageNo);
 
     if (!data || typeof data.ok === 'undefined') {
       status.textContent = '接口返回格式异常，请稍后重试';
@@ -747,14 +893,22 @@ async function searchMagnet(page) {
         : '搜索失败：' + (data.error || '接口异常');
       return;
     }
-    if (!data.items || !data.items.length) {
-      status.textContent = '未找到相关资源，换个关键词试试';
+
+    const hasPosts = !!(data.posts && data.posts.length);
+    const hasMovies = !!(data.movies && data.movies.length);
+    if (!hasPosts && !hasMovies) {
+      status.textContent = (data.postsError || data.moviesError)
+        ? ('搜索失败：' + (data.postsError || data.moviesError))
+        : '未找到相关资源，换个关键词试试';
       return;
     }
 
-    status.textContent = `找到 ${data.total} 条资源，当前第 ${Number(data.page) || pageNo} 页`;
-    setFilterItems(data.items, '1lou');
-    renderPager(data);
+    const parts = [];
+    if (hasMovies) parts.push(`影片 ${data.movies.length} 部`);
+    if (data.postTotal) parts.push(`资源帖 ${data.postTotal} 条`);
+    status.textContent = '找到 ' + parts.join(' · ') + '，点卡片查看磁力';
+
+    renderResults(data);
   } catch (e) {
     status.textContent = '搜索失败，请检查网络后重试';
     console.error(e);
@@ -769,8 +923,8 @@ function renderPager(data) {
   if (!box) return;
   // 接口异常时 page / pageSize 可能缺失，统一定型避免 NaN
   const cur = Number(data.page) || 1;
-  const pageSize = Number(data.pageSize) || 50;
-  const total = Number(data.total) || 0;
+  const pageSize = Number(data.postPageSize || data.pageSize) || 50;
+  const total = Number(data.postTotal || data.total) || 0;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   if (!isFinite(pages) || pages <= 1) {
     box.innerHTML = '';
@@ -791,18 +945,91 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
-function renderResults(items) {
-  const container = document.getElementById('magnetResults');
+/** 清晰度/特性徽章 */
+function badgeHtml(item) {
+  let html = '';
+  if (item.resLabel) {
+    html += `<span class="q-badge q-${escapeHtml(item.res || 'x')}">${escapeHtml(item.resLabel)}</span>`;
+  }
+  (item.feats || []).forEach(f => {
+    html += `<span class="q-badge">${escapeHtml(f)}</span>`;
+  });
+  return html;
+}
+
+/** 渲染整页结果：影片（多版本） + 资源帖 */
+function renderResults(data) {
+  lastData = data;
+
+  const notices = [];
+  if (data.moviesError) notices.push('影片库（BT影视）暂不可用：' + data.moviesError);
+  if (data.postsError) notices.push('资源帖（BT之家）暂不可用：' + data.postsError);
+  const channels = document.getElementById('magnetChannels');
+  channels.innerHTML = notices.length
+    ? `<div class="notice">${notices.map(escapeHtml).join('<br>')}</div>`
+    : '';
+
+  // ---- 影片（点进去看多版本） ----
+  const movieWrap = document.getElementById('movieSectionWrap');
+  if (data.movies && data.movies.length) {
+    movieWrap.hidden = false;
+    movieWrap.innerHTML = `<div class="result-section">
+      <div class="section-title">🎬 影片 · 多版本<span class="section-sub">共 ${data.movies.length} 部，点开看全部磁力版本</span></div>
+      <div class="movie-grid">${data.movies.map(movieCardHtml).join('')}</div>
+    </div>`;
+  } else {
+    movieWrap.hidden = true;
+    movieWrap.innerHTML = '';
+  }
+
+  // ---- 资源帖 ----
+  const postWrap = document.getElementById('postSectionWrap');
+  if (data.posts && data.posts.length) {
+    postWrap.hidden = false;
+    const hint = document.getElementById('postCountHint');
+    if (hint) hint.textContent = data.postTotal ? `共 ${data.postTotal} 条` : '';
+    setFilterItems(data.posts, '1lou');
+    renderPager(data);
+  } else {
+    postWrap.hidden = true;
+    hideFilter();
+    document.getElementById('magnetPager').innerHTML = '';
+  }
+}
+
+function movieCardHtml(item) {
+  const cover = item.cover
+    ? `<img class="magnet-card-img" src="${escapeHtml(item.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`
+    : '<div class="magnet-card-icon">🎬</div>';
+  return `<div class="magnet-card" onclick="showMovieDetail('${escapeHtml(item.id)}')">
+    ${cover}
+    <div class="magnet-card-info">
+      <div class="magnet-card-title">${escapeHtml(item.title)}${item.year ? ` <span class="q-badge">${escapeHtml(item.year)}</span>` : ''}</div>
+      ${item.class ? `<div class="magnet-card-meta"><span>🏷 ${escapeHtml(item.class)}</span></div>` : ''}
+      ${item.desc ? `<div class="magnet-card-desc">${escapeHtml(item.desc)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderPostList(items) {
+  const container = document.getElementById('postList');
+  if (!container) return;
+  if (!items.length) {
+    container.innerHTML = '<div class="magnet-status" style="color:var(--secondtext,#666)">没有符合筛选条件的资源帖</div>';
+    return;
+  }
   container.innerHTML = items.map(item => {
     const noFile = !item.files;
-    return `<div class="magnet-card${noFile ? ' is-empty' : ''}" onclick="showDetail(${item.tid})">
+    const badges = badgeHtml(item);
+    return `<div class="magnet-card${noFile ? ' is-empty' : ''}" onclick="showPostDetail(${escapeHtml(String(item.tid))})">
       <div class="magnet-card-icon">${noFile ? '🚫' : '🧲'}</div>
       <div class="magnet-card-info">
         <div class="magnet-card-title">${escapeHtml(item.title)}</div>
         <div class="magnet-card-meta">
+          ${badges ? `<div style="margin-bottom:4px">${badges}</div>` : ''}
           <span>📎 ${item.files || 0} 个附件</span>
-          <span>👁 ${item.views || 0}</span>
-          ${item.date ? `<span>📅 ${item.date}</span>` : ''}
+          ${item.sizeText ? `<span>📦 ${escapeHtml(item.sizeText)}</span>` : ''}
+          ${item.date ? `<span>📅 ${escapeHtml(item.date)}</span>` : ''}
           ${noFile ? '<span style="color:#e74c3c">无种子</span>' : ''}
         </div>
       </div>
@@ -810,71 +1037,61 @@ function renderResults(items) {
   }).join('');
 }
 
-async function showDetail(tid) {
+async function showPostDetail(tid) {
   const searchSection = document.getElementById('magnetSearchSection');
   const detail = document.getElementById('magnetDetail');
 
   searchSection.style.display = 'none';
   detail.className = 'magnet-detail show';
-  detail.innerHTML = '<div class="magnet-detail-inner"><div class="magnet-status"><div class="spinner"></div> 正在解析种子...</div></div>';
+  detail.innerHTML = '<div class="magnet-detail-inner"><div class="magnet-status"><div class="spinner"></div> 正在解析种子…</div></div>';
 
-  try {
-    const resp = await fetch(`${API_BASE}/bt/links?tid=${encodeURIComponent(tid)}`, {
-      signal: AbortSignal.timeout(45000),
-    });
-    const data = await resp.json();
+  const head = '<div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>';
+  const data = await fetchJson(`${API_BASE}/bt/links?tid=${encodeURIComponent(tid)}`, 45000);
 
-    const head = '<div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>';
-
-    if (!data.ok) {
-      detail.innerHTML = `<div class="magnet-detail-inner">${head}
-        <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.error || '获取失败')}</div>
-      </div>`;
-      return;
-    }
-
-    if (!data.items || !data.items.length) {
-      detail.innerHTML = `<div class="magnet-detail-inner">${head}
-        <div class="magnet-detail-header">
-          <div><h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3></div>
-        </div>
-        <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.message || '暂无可用磁力')}</div>
-      </div>`;
-      return;
-    }
-
-    let html = `<div class="magnet-detail-inner">${head}
-      <div class="magnet-detail-header">
-        <div>
-          <h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3>
-          <div style="font-size:13px;color:var(--secondtext,#666)">共 ${data.count || 0} 个磁力链接</div>
-        </div>
-      </div>`;
-
-    html += '<div class="magnet-group"><div class="magnet-group-title">🧲 磁力链接</div>';
-    for (const item of data.items) {
-      const name = escapeHtml(item.name || '未命名');
-      const magnet = escapeHtml(item.magnet || '');
-      html += `<div class="magnet-item">
-        <div class="magnet-item-info">
-          <div class="magnet-item-name" title="${name}">${name}</div>
-          <div class="magnet-item-size">📦 ${escapeHtml(item.sizeText || '未知大小')}</div>
-        </div>
-        <div class="magnet-item-actions">
-          <button class="btn-copy" data-magnet="${magnet}" onclick="copyMagnet(this, this.dataset.magnet)">复制磁力</button>
-          <a class="btn-open" href="${magnet}">打开</a>
-        </div>
-      </div>`;
-    }
-    html += '</div></div>';
-    detail.innerHTML = html;
-  } catch (e) {
-    detail.innerHTML = `<div class="magnet-detail-inner">
-      <div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>
-      <div class="magnet-status" style="color:var(--secondtext,#666)">解析失败，请稍后重试</div>
+  if (!data || !data.ok) {
+    detail.innerHTML = `<div class="magnet-detail-inner">${head}
+      <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml((data && data.error) || '获取失败，请稍后重试')}</div>
+      <div style="text-align:center;margin-bottom:10px"><button class="btn-copy" onclick="showPostDetail('${escapeHtml(String(tid))}')">重试</button></div>
     </div>`;
-    console.error(e);
+    return;
   }
+
+  if (!data.items || !data.items.length) {
+    detail.innerHTML = `<div class="magnet-detail-inner">${head}
+      <div class="magnet-detail-header">
+        <div><h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3></div>
+      </div>
+      <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.message || '暂无可用磁力')}</div>
+    </div>`;
+    return;
+  }
+
+  let html = `<div class="magnet-detail-inner">${head}
+    <div class="magnet-detail-header">
+      <div>
+        <h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3>
+        <div style="font-size:13px;color:var(--secondtext,#666)">共 ${data.count || 0} 个磁力链接</div>
+      </div>
+    </div>`;
+
+  html += '<div class="magnet-group"><div class="magnet-group-title">🧲 磁力链接</div>';
+  for (const item of data.items) {
+    const name = escapeHtml(item.name || '未命名');
+    const magnet = escapeHtml(item.magnet || '');
+    const badges = badgeHtml(item);
+    html += `<div class="magnet-item">
+      <div class="magnet-item-info">
+        <div class="magnet-item-name" title="${name}">${badges}${name}</div>
+        <div class="magnet-item-size">📦 ${escapeHtml(item.sizeText || '未知大小')}</div>
+      </div>
+      <div class="magnet-item-actions">
+        <button class="btn-copy" data-magnet="${magnet}" onclick="copyMagnet(this, this.dataset.magnet)">复制磁力</button>
+        <a class="btn-open" href="${magnet}">打开</a>
+      </div>
+    </div>`;
+  }
+  html += '</div></div>';
+  detail.innerHTML = html;
 }
 
 function backToList() {
@@ -908,78 +1125,16 @@ function copyMagnet(btn, magnet) {
   });
 }
 
-// ============ 资源站：BT影视（btbtlb）============
+// ============ 影片（BT影视 · 多版本）============
+// 点开影片：先秒出「有哪些版本」，磁力随滚动按需解析（单条边缘缓存 1 天）
 
-async function searchBtbt() {
-  const kw = document.getElementById('magnetKeyword').value.trim();
-  const btn = document.getElementById('magnetSearchBtn');
-  const status = document.getElementById('magnetStatus');
-  const results = document.getElementById('magnetResults');
-  const pager = document.getElementById('magnetPager');
+let verItems = [];
+const magnetStore = new Map();   // tdownId → magnet（'' 表示解析失败）
+const magnetQueue = [];
+let rowObserver = null;
 
-  currentKeyword = kw;
-  btn.disabled = true;
-  btn.textContent = '搜索中...';
-  status.innerHTML = '<div class="spinner"></div> 正在搜索 BT影视（该站较慢，可能需要 10 秒）';
-  results.innerHTML = '';
-  if (pager) pager.innerHTML = '';
-  document.getElementById('magnetDetail').className = 'magnet-detail';
-  document.getElementById('magnetSearchSection').style.display = 'block';
-
-  try {
-    const resp = await fetch(`${API_BASE}/bt/btbt-search?q=${encodeURIComponent(kw)}`, {
-      signal: AbortSignal.timeout(45000),
-    });
-    const data = await resp.json();
-
-    if (!data || typeof data.ok === 'undefined') {
-      status.textContent = '接口返回格式异常，请稍后重试';
-      return;
-    }
-    if (!data.ok) {
-      status.textContent = data.limited
-        ? '资源站正在限流，请过 1-2 分钟再试'
-        : '搜索失败：' + (data.error || '接口异常');
-      return;
-    }
-    if (!data.items || !data.items.length) {
-      status.textContent = 'BT影视没有匹配的影片，换个关键词试试';
-      return;
-    }
-
-    status.textContent = `BT影视找到 ${data.total} 部影片，点选查看各版本磁力`;
-    hideFilter();
-    renderBtbtResults(data.items);
-  } catch (e) {
-    status.textContent = '搜索失败，请检查网络后重试';
-    console.error(e);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '搜索';
-  }
-}
-
-function renderBtbtResults(items) {
-  const container = document.getElementById('magnetResults');
-  container.innerHTML = items.map(item => {
-    const title = escapeHtml(item.title);
-    const cover = item.cover
-      ? `<img class="magnet-card-img" src="${escapeHtml(item.cover)}" alt="${title}" loading="lazy" onerror="this.style.display='none'">`
-      : '<div class="magnet-card-icon">🎬</div>';
-    return `<div class="magnet-card" onclick="showBtbtDetail(${item.id})">
-      ${cover}
-      <div class="magnet-card-info">
-        <div class="magnet-card-title">${title}</div>
-        <div class="magnet-card-meta">
-          ${item.class ? `<span>🏷 ${escapeHtml(item.class)}</span>` : ''}
-        </div>
-        ${item.desc ? `<div class="magnet-card-desc">${escapeHtml(item.desc)}</div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function renderBtbtVersionList(items) {
+/* ---------- 版本列表渲染 ---------- */
+function renderVersionList(items) {
   const box = document.getElementById('btbtList');
   if (!box) return;
   if (!items.length) {
@@ -987,75 +1142,203 @@ function renderBtbtVersionList(items) {
     return;
   }
   box.innerHTML = items.map(item => {
+    const id = String(item.tdownId);
     const name = escapeHtml(item.name || '未命名');
-    const magnet = escapeHtml(item.magnet || '');
     const ep = item.episode ? `<span class="ep-badge">${escapeHtml(item.episode)}</span>` : '';
-    return `<div class="magnet-item">
+    const badges = badgeHtml(item);
+    const magnet = magnetStore.get(id);
+    let actions;
+    if (magnet) {
+      actions = `<button class="btn-copy" data-magnet="${escapeHtml(magnet)}" onclick="copyMagnet(this, this.dataset.magnet)">复制磁力</button>
+        <a class="btn-open" href="${escapeHtml(magnet)}">打开</a>`;
+    } else if (magnet === '') {
+      actions = `<button class="btn-copy retry" onclick="retryMagnet('${escapeHtml(id)}')">重新解析</button>`;
+    } else {
+      actions = '<button class="btn-copy" disabled>解析中…</button>';
+    }
+    return `<div class="magnet-item" data-vid="${escapeHtml(id)}">
       <div class="magnet-item-info">
-        <div class="magnet-item-name" title="${name}">${ep}${name}</div>
+        <div class="magnet-item-name" title="${name}">${ep}${badges}${name}</div>
         <div class="magnet-item-size">📦 ${escapeHtml(item.sizeText || '未知大小')}</div>
       </div>
-      <div class="magnet-item-actions">
-        <button class="btn-copy" data-magnet="${magnet}" onclick="copyMagnet(this, this.dataset.magnet)">复制磁力</button>
-        <a class="btn-open" href="${magnet}">打开</a>
-      </div>
+      <div class="magnet-item-actions">${actions}</div>
     </div>`;
   }).join('');
 }
 
-async function showBtbtDetail(id) {
+/* ---------- 磁力按需解析（并发 4，谁先回来先填谁） ---------- */
+const MAGNET_CONCURRENCY = 4;
+let magnetActive = 0;
+
+function queueMagnet(id) {
+  if (!id) return;
+  if (magnetStore.has(id)) return;
+  if (magnetQueue.indexOf(id) >= 0) return;
+  magnetQueue.push(id);
+  pumpMagnets();
+}
+
+function pumpMagnets() {
+  while (magnetActive < MAGNET_CONCURRENCY && magnetQueue.length) {
+    const id = magnetQueue.shift();
+    magnetActive++;
+    fetchJson(`${API_BASE}/bt/magnets?ids=${encodeURIComponent(id)}`, 45000)
+      .then(data => {
+        const first = data && data.items && data.items[0];
+        magnetStore.set(id, (first && first.magnet) || '');
+        updateMagnetCell(id);
+      })
+      .then(() => {
+        magnetActive--;
+        pumpMagnets();
+      });
+  }
+}
+
+function updateMagnetCell(id) {
+  const row = document.querySelector(`.magnet-item[data-vid="${id}"]`);
+  if (!row) return;
+  const box = row.querySelector('.magnet-item-actions');
+  if (!box) return;
+  const magnet = magnetStore.get(id);
+  if (magnet) {
+    box.innerHTML = `<button class="btn-copy" data-magnet="${escapeHtml(magnet)}" onclick="copyMagnet(this, this.dataset.magnet)">复制磁力</button>
+      <a class="btn-open" href="${escapeHtml(magnet)}">打开</a>`;
+  } else {
+    box.innerHTML = `<button class="btn-copy retry" onclick="retryMagnet('${escapeHtml(String(id))}')">重新解析</button>`;
+  }
+}
+
+function retryMagnet(id) {
+  magnetStore.delete(id);
+  const row = document.querySelector(`.magnet-item[data-vid="${id}"]`);
+  if (row) {
+    const box = row.querySelector('.magnet-item-actions');
+    if (box) box.innerHTML = '<button class="btn-copy" disabled>解析中…</button>';
+  }
+  queueMagnet(id);
+}
+
+/** 只解析“看得见”的版本：先补前 8 条，其余滚动到再解析 */
+function observeRows() {
+  if (rowObserver) {
+    rowObserver.disconnect();
+    rowObserver = null;
+  }
+  const rows = Array.prototype.slice.call(document.querySelectorAll('.magnet-item[data-vid]'));
+  if (!rows.length) return;
+
+  // 先预取首屏前 6 条（用户最可能先看），其余滚动到再解析
+  rows.slice(0, 6).forEach(el => queueMagnet(el.dataset.vid));
+
+  if (!('IntersectionObserver' in window)) {
+    rows.forEach(el => queueMagnet(el.dataset.vid));
+    return;
+  }
+  rowObserver = new IntersectionObserver(entries => {
+    entries.forEach(en => {
+      if (en.isIntersecting && en.target.dataset.vid) queueMagnet(en.target.dataset.vid);
+    });
+  }, { rootMargin: '160px' });
+  rows.forEach(el => rowObserver.observe(el));
+}
+
+function onVerSortChange() {
+  const el = document.getElementById('verSort');
+  verSort = el ? el.value : 'default';
+  refreshFilter();
+}
+
+/* ---------- 影片详情 ---------- */
+async function loadVersions(id) {
+  if (versionCache.has(id)) return versionCache.get(id);
+
+  let data = await fetchJson(`${API_BASE}/bt/versions?id=${encodeURIComponent(id)}`, 40000);
+
+  // Worker 还是旧版（没有 /bt/versions）时，退回旧接口（旧接口自带磁力）
+  if (!data || typeof data.ok === 'undefined' || data.error === 'Not Found') {
+    const old = await fetchJson(`${API_BASE}/bt/btbt-links?id=${encodeURIComponent(id)}&limit=40`, 60000);
+    if (old && typeof old.ok !== 'undefined') {
+      if (old.ok && old.items && old.items.length) {
+        const items = old.items.map((it, i) => {
+          const vid = 'p' + i;
+          if (it.magnet) magnetStore.set(vid, it.magnet);
+          return {
+            tdownId: vid,
+            name: it.name,
+            episode: it.episode || '',
+            sizeText: it.sizeText || '',
+            sizeBytes: 0,
+            resRank: 0,
+            feats: [],
+          };
+        });
+        data = { ok: true, title: old.title, items: items, total: old.total };
+      } else {
+        data = old; // 保留旧接口的错误提示（例如限流）
+      }
+    }
+  }
+
+  if (data && data.ok) versionCache.set(id, data);
+  return data;
+}
+
+async function showMovieDetail(id) {
   const searchSection = document.getElementById('magnetSearchSection');
   const detail = document.getElementById('magnetDetail');
 
   searchSection.style.display = 'none';
   detail.className = 'magnet-detail show';
-  detail.innerHTML = '<div class="magnet-detail-inner"><div class="magnet-status"><div class="spinner"></div> 正在解析各版本磁力（可能需要 10-20 秒）</div></div>';
+  detail.innerHTML = '<div class="magnet-detail-inner"><div class="magnet-status"><div class="spinner"></div> 正在读取版本列表…</div></div>';
 
-  try {
-    const resp = await fetch(`${API_BASE}/bt/btbt-links?id=${encodeURIComponent(id)}&limit=10`, {
-      signal: AbortSignal.timeout(60000),
-    });
-    const data = await resp.json();
+  const head = '<div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>';
+  const data = await loadVersions(id);
 
-    const head = '<div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>';
-
-    if (!data.ok) {
-      detail.innerHTML = `<div class="magnet-detail-inner">${head}
-        <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.error || '获取失败')}</div>
-      </div>`;
-      return;
-    }
-
-    if (!data.items || !data.items.length) {
-      detail.innerHTML = `<div class="magnet-detail-inner">${head}
-        <div class="magnet-detail-header"><div><h3 style="margin:0 0 8px">${escapeHtml(data.title || '')}</h3></div></div>
-        <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.message || '该影片暂无资源')}</div>
-      </div>`;
-      return;
-    }
-
-    let html = `<div class="magnet-detail-inner">${head}
-      <div class="magnet-detail-header">
-        <div>
-          <h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3>
-          <div style="font-size:13px;color:var(--secondtext,#666)">共 ${data.total} 个版本，已解析 ${data.count} 个</div>
-        </div>
-      </div>`;
-    if (data.total <= 1) {
-      html += '<div class="magnet-status" style="padding:6px 0;text-align:left;color:var(--secondtext,#666)">该站此片只有 1 个资源包；想要分集资源，可以切换到「BT之家」再搜一次</div>';
-    }
-    html += '<div id="btbtFilter" class="magnet-filter" hidden></div>';
-    html += '<div class="magnet-group"><div class="magnet-group-title">🧲 磁力链接</div><div id="btbtList"></div></div>';
-    html += '</div>';
-    detail.innerHTML = html;
-    setFilterItems(data.items, 'btbt');
-  } catch (e) {
-    detail.innerHTML = `<div class="magnet-detail-inner">
-      <div class="magnet-detail-back" onclick="backToList()">← 返回列表</div>
-      <div class="magnet-status" style="color:var(--secondtext,#666)">解析失败，请稍后重试</div>
+  if (!data || !data.ok) {
+    detail.innerHTML = `<div class="magnet-detail-inner">${head}
+      <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml((data && data.error) || '获取失败，请稍后重试')}</div>
+      <div style="text-align:center;margin-bottom:10px"><button class="btn-copy" onclick="showMovieDetail('${escapeHtml(String(id))}')">重试</button></div>
     </div>`;
-    console.error(e);
+    return;
   }
+
+  verItems = data.items || [];
+  if (!verItems.length) {
+    detail.innerHTML = `<div class="magnet-detail-inner">${head}
+      <div class="magnet-detail-header"><div><h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3></div></div>
+      <div class="magnet-status" style="color:var(--secondtext,#666)">${escapeHtml(data.message || '该影片暂无资源')}</div>
+    </div>`;
+    return;
+  }
+
+  detail.innerHTML = `<div class="magnet-detail-inner">${head}
+    <div class="magnet-detail-header">
+      <div>
+        <h3 style="margin:0 0 8px">${escapeHtml(data.title || currentKeyword)}</h3>
+        <div style="font-size:13px;color:var(--secondtext,#666)">共 ${verItems.length} 个版本 · 已按清晰度排序，磁力随滚动自动解析</div>
+      </div>
+    </div>
+    <div id="btbtFilter" class="magnet-filter" hidden></div>
+    <div class="magnet-group" style="margin-top:12px">
+      <div class="magnet-group-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <span>🧲 磁力版本</span>
+        <select id="verSort" class="mini-select" onchange="onVerSortChange()">
+          <option value="default">清晰度优先</option>
+          <option value="size">体积从大到小</option>
+          <option value="sizeAsc">体积从小到大</option>
+          <option value="ep">集数顺序</option>
+        </select>
+      </div>
+      <div id="btbtList"></div>
+    </div>
+  </div>`;
+
+  filterRes = '';
+  filterFeat = [];
+  filterExclude = [];
+  verSort = 'default';
+  setFilterItems(verItems, 'btbt');
 }
 </script></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/images/avatar.jpg" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/ loading='lazy'></div><div class="author-info-name">云风子</div><div class="author-info-description">专注技术成长与记录</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">12</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">22</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">5</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/"><i class="fab fa-github"></i><span>关注我</span></a></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>公告</span></div><div class="announcement_content">欢迎来到我的博客</div></div><div class="sticky_layout"><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/09/11/2026-09-11-DNF86%E7%BA%A7ServerS4A21%E4%BA%91%E6%9C%8D%E5%8A%A1%E5%99%A8%E9%83%A8%E7%BD%B2/" title="DNF 86级端 ServerS4A21 云服务器部署全流程：.NET 10 服务端从零编译到联机">DNF 86级端 ServerS4A21 云服务器部署全流程：.NET 10 服务端从零编译到联机</a><time datetime="2026-09-11T04:00:00.000Z" title="发表于 2026-09-11 12:00:00">2026-09-11</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/09/08/2026-09-08-DNF%E7%A7%81%E6%9C%8DDocker%E6%90%AD%E5%BB%BA/" title="DNF 85级端 Docker 私服搭建全流程：从虚拟机到局域网跑通">DNF 85级端 Docker 私服搭建全流程：从虚拟机到局域网跑通</a><time datetime="2026-09-08T04:00:00.000Z" title="发表于 2026-09-08 12:00:00">2026-09-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/08/02/2026-08-02-Electron%E8%82%A1%E7%A5%A8%E5%B0%8F%E7%BB%84%E4%BB%B6%E5%AE%9E%E6%88%98/" title="用 Electron 从零做一个桌面股票行情小组件：实时行情、迷你K线、一键打包 exe">用 Electron 从零做一个桌面股票行情小组件：实时行情、迷你K线、一键打包 exe</a><time datetime="2026-08-02T06:00:00.000Z" title="发表于 2026-08-02 14:00:00">2026-08-02</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/05/24/2026-05-24-Crush%E6%8C%87%E5%8D%97/" title="Crush 终端 AI 助手使用指南：开源免费的多模型编程搭档">Crush 终端 AI 助手使用指南：开源免费的多模型编程搭档</a><time datetime="2026-05-24T06:00:00.000Z" title="发表于 2026-05-24 14:00:00">2026-05-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/05/24/2026-05-24-Codex-CLI%E6%8C%87%E5%8D%97/" title="OpenAI Codex CLI 使用教程：ChatGPT 终端编程助手完全指南">OpenAI Codex CLI 使用教程：ChatGPT 终端编程助手完全指南</a><time datetime="2026-05-24T05:00:00.000Z" title="发表于 2026-05-24 13:00:00">2026-05-24</time></div></div></div></div><div class="card-widget card-archives">
     <div class="item-headline">
@@ -1112,4 +1395,4 @@ async function showBtbtDetail(id) {
         </li>
       
     </ul>
-  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-07T11:10:02.255Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
+  </div><div class="card-widget card-webinfo"><div class="item-headline"><i class="fas fa-chart-line"></i><span>网站信息</span></div><div class="webinfo"><div class="webinfo-item"><div class="item-name">文章数目 :</div><div class="item-count">12</div></div><div class="webinfo-item"><div class="item-name">本站访客数 :</div><div class="item-count" id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">本站总浏览量 :</div><div class="item-count" id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></div></div><div class="webinfo-item"><div class="item-name">最后更新时间 :</div><div class="item-count" id="last-push-date" data-lastPushDate="2026-11-09T12:23:45.683Z"><i class="fa-solid fa-spinner fa-spin"></i></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By 云风子</span></div><div class="footer_busuanzi"><span class="footer-separator">站点总访客数</span><span id="busuanzi_value_site_uv"><i class="fa-solid fa-spinner fa-spin"></i></span><span class="footer-separator">|</span><span class="footer-separator">站点总访问量</span><span id="busuanzi_value_site_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script src="/js/busuanzi-sync.js"></script><script async data-pjax src="https://vercount.one/js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据加载中</span></div><div class="local-search-input"><input placeholder="搜索文章..." type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.4"></script></div></div></body></html>
